@@ -5,6 +5,20 @@ Planned work lives in [ROADMAP.md](ROADMAP.md); this file records what actually 
 
 ---
 
+## 2026-11-22: Mirror this phone
+
+### Changed
+- Phone app: Remote tab → **Mirror this phone**. The TV has Chromecast built in, so on Android the button hands over to the phone's own screen casting: the system Cast settings first (Google Home first on Samsung, whose Cast settings open its own Smart View screen mirroring), then the Google Home app ("Cast my screen"), then Google Home in the Play Store. This gives smooth video with sound, which streaming over ADB could not. On iPhone the page explains that Google TVs don't support AirPlay and lists what works instead (Cast buttons in apps, Open a link, screensaver photos).
+- Android `MainActivity`: new `connecttv/cast` method channel (`castScreen`).
+
+### Tested
+- `dart analyze`, `flutter test`, release APK build. Confirmed (read-only) that the TV has the Chromecast receiver installed.
+
+### Open issues
+- Casting itself still needs a hands-on try on the Samsung (installed there; the phone was locked during testing).
+
+---
+
 ## 2026-11-22: Auto-reconnect, favourite apps, volume slider, On this day
 
 ### Changed

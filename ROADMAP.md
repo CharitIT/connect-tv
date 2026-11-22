@@ -81,6 +81,7 @@ Status as of 2026-11-19: remote control, app switching, and the custom screensav
 ### Remote and apps
 - [ ] **Phone remote**: a mobile layout installable as a home-screen app (PWA), with a PIN or login before the server is opened to the network.
 - [x] **Live screen preview**: show a screenshot of what's on the TV (`adb exec-out screencap`).
+- [x] **Mirror the phone** (Android): hands over to the phone's Chromecast screen casting. iPhone can't (no AirPlay on Google TV).
 - [x] **Deep links**: open a specific YouTube video, Netflix title, or URL directly (`am start -a VIEW -d <url>`).
 - [x] **Favourites**: choose and reorder the quick-switch apps in the UI instead of editing `devices.json` (phone: row of app buttons on the Remote tab).
 - [x] **Volume slider** (presses volume keys to reach the level; Android 11 can't set a number directly).
