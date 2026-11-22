@@ -1,0 +1,18 @@
+# Local data: saved TVs (IP addresses) and your uploaded photos/videos
+data/
+
+# Personal, machine-specific notes
+LOCAL.md
+
+# Build output
+tv-screensaver/build/
+mobile/assets/tv-screensaver.apk
+/build/
+mobile/assets/tv-screensaver.apk
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.log
+node_modules/

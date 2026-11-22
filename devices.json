@@ -1,0 +1,146 @@
+{
+  "profiles": [
+    {
+      "id": "tcl-google-tv",
+      "brand": "TCL",
+      "label": "TCL (Google TV)",
+      "os": "Google TV",
+      "steps": [
+        "On the TV open Settings → System → About.",
+        "Scroll to \"Android TV OS build\" and press OK on the remote 7 times until it says you are a developer.",
+        "Go back to Settings → System → Developer options and turn on \"USB debugging\".",
+        "Find the TV's IP address: Settings → Network & Internet → your Wi-Fi network → IP address.",
+        "Click Connect here. The TV shows \"Allow USB debugging?\" — tick \"Always allow from this computer\" and choose Allow."
+      ],
+      "notes": "TCL Google TV sets accept network ADB on port 5555 once USB debugging is on. If Connect keeps failing, turn USB debugging off and on again, or restart the TV."
+    },
+    {
+      "id": "tcl-android-tv",
+      "brand": "TCL",
+      "label": "TCL (older Android TV)",
+      "os": "Android TV",
+      "steps": [
+        "On the TV open Settings → Device Preferences → About.",
+        "Select \"Build\" and press OK 7 times.",
+        "Go back to Device Preferences → Developer options and turn on \"USB debugging\".",
+        "Find the IP: Settings → Network & Internet → your Wi-Fi → IP address.",
+        "Click Connect and accept the \"Allow USB debugging?\" prompt on the TV."
+      ]
+    },
+    {
+      "id": "sony-google-tv",
+      "brand": "Sony",
+      "label": "Sony Bravia (Google TV / Android TV)",
+      "os": "Google TV",
+      "steps": [
+        "Settings → System → About (older models: Device Preferences → About).",
+        "Press OK on \"Build\" / \"Android TV OS build\" 7 times.",
+        "Developer options → turn on \"USB debugging\".",
+        "Find the IP under Network & Internet.",
+        "Click Connect and accept the prompt on the TV."
+      ]
+    },
+    {
+      "id": "hisense-google-tv",
+      "brand": "Hisense",
+      "label": "Hisense (Google TV / Android TV)",
+      "os": "Google TV",
+      "steps": [
+        "Settings → System → About → press OK on \"Android TV OS build\" 7 times.",
+        "Settings → System → Developer options → turn on \"USB debugging\".",
+        "Find the IP under Network & Internet.",
+        "Click Connect and accept the prompt on the TV."
+      ]
+    },
+    {
+      "id": "philips-android-tv",
+      "brand": "Philips",
+      "label": "Philips (Android TV)",
+      "os": "Android TV",
+      "steps": [
+        "Settings → Android Settings → Device Preferences → About → press OK on \"Build\" 7 times.",
+        "Device Preferences → Developer options → turn on \"USB debugging\".",
+        "Find the IP under Network & Internet.",
+        "Click Connect and accept the prompt on the TV."
+      ]
+    },
+    {
+      "id": "xiaomi-android-tv",
+      "brand": "Xiaomi",
+      "label": "Xiaomi Mi TV / Mi Box",
+      "os": "Android TV",
+      "steps": [
+        "Settings → Device Preferences → About → press OK on \"Build\" 7 times.",
+        "Device Preferences → Developer options → turn on \"USB debugging\".",
+        "Find the IP under Network & Internet.",
+        "Click Connect and accept the prompt on the TV."
+      ]
+    },
+    {
+      "id": "chromecast-google-tv",
+      "brand": "Google",
+      "label": "Chromecast with Google TV / Google TV Streamer",
+      "os": "Google TV",
+      "steps": [
+        "Settings → System → About → press OK on \"Android TV OS build\" 7 times.",
+        "Settings → System → Developer options → turn on \"USB debugging\".",
+        "Find the IP under Network & Internet.",
+        "Click Connect and accept the prompt on the TV."
+      ]
+    },
+    {
+      "id": "nvidia-shield",
+      "brand": "NVIDIA",
+      "label": "NVIDIA Shield TV",
+      "os": "Android TV",
+      "steps": [
+        "Settings → Device Preferences → About → press OK on \"Build\" 7 times.",
+        "Device Preferences → Developer options → turn on \"Network debugging\".",
+        "The IP is shown under Network debugging.",
+        "Click Connect and accept the prompt on the TV."
+      ]
+    },
+    {
+      "id": "generic",
+      "brand": "Other",
+      "label": "Other Android TV / Google TV",
+      "os": "Android TV",
+      "steps": [
+        "Open Settings and find About (under System or Device Preferences).",
+        "Press OK on \"Build\" or \"Android TV OS build\" 7 times to unlock Developer options.",
+        "In Developer options turn on \"USB debugging\" (or \"Network debugging\").",
+        "Find the TV's IP address under Network & Internet.",
+        "Click Connect and accept the prompt on the TV. If your TV only offers \"Wireless debugging\" with a pairing code, use the Pair option instead."
+      ]
+    }
+  ],
+  "apps": {
+    "com.google.android.youtube.tv":          { "name": "YouTube",        "color": "#ff0033" },
+    "com.netflix.ninja":                      { "name": "Netflix",        "color": "#e50914" },
+    "com.amazon.amazonvideo.livingroom":      { "name": "Prime Video",    "color": "#1399ff" },
+    "com.disney.disneyplus":                  { "name": "Disney+",        "color": "#113ccf" },
+    "in.startv.hotstar":                      { "name": "JioHotstar",     "color": "#0c1a4b" },
+    "com.google.android.youtube.tvmusic":     { "name": "YouTube Music",  "color": "#ff0000" },
+    "com.google.android.youtube.tvkids":      { "name": "YouTube Kids",   "color": "#ff4e45" },
+    "com.spotify.tv.android":                 { "name": "Spotify",        "color": "#1db954" },
+    "com.apple.atve.androidtv.appletv":       { "name": "Apple TV",       "color": "#222222" },
+    "com.hbo.hbonow":                         { "name": "Max",            "color": "#002be7" },
+    "com.sonyliv":                            { "name": "Sony LIV",       "color": "#0b0b0b" },
+    "com.graymatrix.did":                     { "name": "ZEE5",           "color": "#8230c6" },
+    "com.google.android.videos":              { "name": "Google TV",      "color": "#4285f4" },
+    "com.google.android.apps.youtube.unplugged": { "name": "YouTube TV",  "color": "#cc0000" },
+    "com.google.android.youtube.tvunplugged":  { "name": "YouTube TV",     "color": "#cc0000" },
+    "com.plexapp.android":                    { "name": "Plex",           "color": "#e5a00d" },
+    "org.xbmc.kodi":                          { "name": "Kodi",           "color": "#17b2e7" },
+    "com.android.vending":                    { "name": "Play Store",     "color": "#01875f" },
+    "com.android.tv.settings":                { "name": "Settings",       "color": "#5f6368" },
+    "com.connecttv.screensaver":               { "name": "My Screensaver", "color": "#7c4dff" }
+  },
+  "defaultChannels": [
+    "com.netflix.ninja",
+    "com.amazon.amazonvideo.livingroom",
+    "com.disney.disneyplus",
+    "in.startv.hotstar",
+    "com.google.android.youtube.tv"
+  ]
+}

@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect TV</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #181b24; --panel2: #20242f; --line: #2c3140; --text: #e9ecf3; --muted: #9aa3b5;
+    --accent: #7c4dff; --accent2: #a98bff; --ok: #2ecc71; --warn: #f5b041; --bad: #ff5c5c; --radius: 14px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f5f9; --panel: #ffffff; --panel2: #eef0f5; --line: #dde1ea; --text: #161925; --muted: #5f6678; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button { background: none; border: 0; padding: 8px 14px; border-radius: 10px; cursor: pointer; color: var(--muted); }
+  nav button.active { background: var(--panel2); color: var(--text); }
+  main { max-width: 1080px; margin: 0 auto; padding: 22px 16px 60px; }
+  section.tab { display: none; } section.tab.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 18px; }
+  .card h2 { font-size: 16px; margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  input[type=text], input[type=number], select { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; min-width: 0; }
+  input[type=text] { flex: 1; }
+  .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  ol.steps { margin: 8px 0 0; padding-left: 20px; } ol.steps li { margin: 4px 0; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel2); border-radius: 10px; }
+  .item .grow { flex: 1; min-width: 0; }
+  .item small { color: var(--muted); display: block; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 10px; }
+
+  /* remote */
+  .remote { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 68px); grid-template-rows: repeat(3, 68px); gap: 6px; }
+  .key { background: var(--panel2); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; display: grid; place-items: center; font-size: 20px; user-select: none; transition: transform .05s; }
+  .key:active, .key.pressed { transform: scale(.94); background: var(--accent); color: #fff; }
+  .key.ok { border-radius: 50%; background: var(--accent); color: #fff; font-weight: 600; font-size: 16px; }
+  .keys { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .keys .key { width: 68px; height: 50px; font-size: 14px; }
+  .kbd-hint { font-size: 13px; color: var(--muted); text-align: center; }
+
+  /* apps */
+  .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .app { border: 0; border-radius: 12px; padding: 18px 10px; cursor: pointer; color: #fff; font-weight: 600; background: #3a3f4f; min-height: 78px; text-align: center; word-break: break-word; }
+  .app:hover { filter: brightness(1.15); }
+  .app.big { min-height: 96px; font-size: 17px; }
+
+  /* screensaver */
+  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 28px; text-align: center; cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--panel2); }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 14px; }
+  .thumb { position: relative; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 12px; color: var(--muted); }
+  .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; }
+  .thumb .del { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,.65); color: #fff; border: 0; border-radius: 8px; padding: 3px 8px; cursor: pointer; }
+  .thumb .tag { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,.65); color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 11px; }
+  .settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 18px; }
+  .settings label { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; background: var(--panel2); border: 1px solid var(--line); }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .progress { height: 6px; background: var(--panel2); border-radius: 6px; overflow: hidden; margin-top: 10px; display: none; }
+  .progress div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #222738; color: #fff; padding: 10px 16px; border-radius: 10px; max-width: min(560px, calc(100% - 32px)); box-shadow: 0 6px 24px rgba(0,0,0,.35); display: none; z-index: 10; }
+  #toast.err { background: #7a1f1f; }
+  .locked { opacity: .45; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📺 Connect TV</h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Checking…</span></div>
+  <nav>
+    <button data-tab="connect" class="active">Connect</button>
+    <button data-tab="remote">Remote</button>
+    <button data-tab="apps">Apps</button>
+    <button data-tab="screensaver">Screensaver</button>
+  </nav>
+</header>
+
+<main>
+  <!-- CONNECT -->
+  <section class="tab active" id="tab-connect">
+    <div class="card" id="adbWarn" style="display:none">
+      <h2>⚠️ adb not found</h2>
+      <p class="muted">Install Android platform-tools (or set <code>ADB=/path/to/adb</code>) and restart the server.</p>
+    </div>
+
+    <div class="card" id="connectedCard" style="display:none">
+      <h2>Connected</h2>
+      <div class="item">
+        <div class="grow"><strong id="tvName"></strong><small id="tvDetail"></small></div>
+        <button class="btn danger" id="disconnectBtn">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>1. Set up your TV (one time)</h2>
+        <select id="profile" style="width:100%"></select>
+        <ol class="steps" id="steps"></ol>
+        <p class="muted" id="profileNotes"></p>
+      </div>
+      <div class="card">
+        <h2>2. Connect</h2>
+        <div class="row">
+          <input type="text" id="address" placeholder="TV IP address, e.g. 192.168.1.40">
+          <button class="btn primary" id="connectBtn">Connect</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="scanBtn">🔍 Find TVs on my Wi-Fi</button>
+          <span class="muted" id="scanInfo"></span>
+        </div>
+        <div class="list" id="found" style="margin-top:10px"></div>
+
+        <h2 style="margin-top:18px">Saved TVs</h2>
+        <div class="list" id="saved"><p class="muted">None yet.</p></div>
+
+        <details>
+          <summary>My TV only has "Wireless debugging" with a pairing code</summary>
+          <p class="muted">On the TV choose “Pair device with pairing code”. Enter the IP:port and code it shows, then connect using the IP:port shown under Wireless debugging.</p>
+          <div class="row">
+            <input type="text" id="pairAddr" placeholder="192.168.1.40:37123">
+            <input type="text" id="pairCode" placeholder="6-digit code" style="max-width:130px">
+            <button class="btn" id="pairBtn">Pair</button>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- REMOTE -->
+  <section class="tab" id="tab-remote">
+    <div class="card needs-tv">
+      <div class="remote">
+        <div class="keys">
+          <div class="key" data-key="power">⏻ Power</div>
+          <div class="key" data-key="input">Input</div>
+          <div class="key" data-key="settings">⚙︎</div>
+          <div class="key" data-key="assistant">🎙</div>
+        </div>
+        <div class="dpad">
+          <span></span><div class="key" data-key="up">▲</div><span></span>
+          <div class="key" data-key="left">◀</div><div class="key ok" data-key="ok">OK</div><div class="key" data-key="right">▶</div>
+          <span></span><div class="key" data-key="down">▼</div><span></span>
+        </div>
+        <div class="keys">
+          <div class="key" data-key="back">↩ Back</div>
+          <div class="key" data-key="home">⌂ Home</div>
+          <div class="key" data-key="recents">▤ Apps</div>
+        </div>
+        <div class="keys">
+          <div class="key" data-key="voldown">🔉 −</div>
+          <div class="key" data-key="mute">🔇</div>
+          <div class="key" data-key="volup">🔊 +</div>
+        </div>
+        <div class="keys">
+          <div class="key" data-key="rewind">⏪</div>
+          <div class="key" data-key="playpause">⏯</div>
+          <div class="key" data-key="forward">⏩</div>
+        </div>
+        <div class="row" style="width:100%;max-width:420px">
+          <input type="text" id="typeText" placeholder="Type on the TV (search boxes etc.)">
+          <button class="btn" id="sendText">Send</button>
+        </div>
+        <p class="kbd-hint">Keyboard: arrows · Enter = OK · Backspace/Esc = Back · H = Home · Space = Play/Pause · +/− = volume</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- APPS -->
+  <section class="tab" id="tab-apps">
+    <div class="card needs-tv">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Quick switch</h2>
+        <span class="muted" id="nowPlaying"></span>
+      </div>
+      <div class="apps" id="quickApps" style="margin-top:12px"></div>
+    </div>
+    <div class="card needs-tv">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">All apps on this TV</h2>
+        <button class="btn" id="refreshApps">Refresh</button>
+      </div>
+      <div class="apps" id="allApps" style="margin-top:12px"><p class="muted">Loading…</p></div>
+    </div>
+  </section>
+
+  <!-- SCREENSAVER -->
+  <section class="tab" id="tab-screensaver">
+    <div class="card needs-tv" id="ssInstallCard">
+      <h2>Screensaver app <span class="badge" id="ssBadge">…</span></h2>
+      <p class="muted" id="ssInstallText">Your photos and videos play through a small screensaver app installed on the TV.</p>
+      <div class="row">
+        <button class="btn primary" id="ssInstall">Install on TV</button>
+        <button class="btn" id="ssPreview">▶ Preview on TV</button>
+      </div>
+    </div>
+
+    <div class="card needs-tv ss-ready">
+      <h2>Your photos & videos</h2>
+      <div class="drop" id="drop">
+        <strong>Drop photos or videos here</strong><br>
+        <span class="muted">or click to choose · JPG, PNG, WEBP, GIF, MP4, MOV, MKV, WEBM</span>
+        <input type="file" id="fileInput" multiple accept="image/*,video/*" hidden>
+      </div>
+      <div class="progress" id="progress"><div></div></div>
+      <p class="muted" id="uploadInfo"></p>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+
+    <div class="card needs-tv ss-ready">
+      <h2>Settings</h2>
+      <div class="settings">
+        <label>Seconds per photo <input type="number" id="cfgInterval" min="3" max="600" style="width:90px"></label>
+        <label>Fit <select id="cfgFit"><option value="cover">Fill screen</option><option value="contain">Show whole photo</option></select></label>
+        <label>Shuffle <input type="checkbox" id="cfgShuffle"></label>
+        <label>Show clock <input type="checkbox" id="cfgClock"></label>
+        <label>Slow zoom motion <input type="checkbox" id="cfgMotion"></label>
+        <label>Mute videos <input type="checkbox" id="cfgMute"></label>
+      </div>
+      <div class="row" style="margin-top:14px"><button class="btn" id="saveCfg">Save settings</button></div>
+    </div>
+
+    <div class="card needs-tv ss-ready">
+      <h2>Use as the TV's screensaver <span class="badge" id="activeBadge"></span></h2>
+      <div class="row">
+        <label class="row">Start after <input type="number" id="timeoutMin" min="1" max="120" value="5" style="width:80px"> minutes idle</label>
+        <button class="btn primary" id="ssActivate">Set as screensaver</button>
+        <button class="btn" id="ssRestore">Restore original</button>
+      </div>
+      <p class="muted">Google TV hides third-party screensavers from its settings menu, so Connect TV sets it directly for you.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+let state = {}, profiles = null, ss = null, appsLoaded = false;
+
+function toast(msg, err) {
+  const t = $('#toast');
+  t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), err ? 7000 : 2800);
+}
+async function api(path, opts = {}) {
+  const init = { method: opts.method || (opts.body ? 'POST' : 'GET'), headers: {} };
+  if (opts.body) { init.body = JSON.stringify(opts.body); init.headers['Content-Type'] = 'application/json'; }
+  if (opts.post) init.method = 'POST';
+  const r = await fetch(path, init);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+  return data;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function busy(btn, on, label) {
+  if (on) { btn.dataset.label = btn.textContent; btn.textContent = label || 'Working…'; btn.disabled = true; }
+  else { btn.textContent = btn.dataset.label || btn.textContent; btn.disabled = false; }
+}
+
+// ---------- tabs ----------
+function showTab(name) {
+  $$('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  $$('section.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
+  try { localStorage.setItem('tab', name); } catch {}
+  if (name === 'apps' && isConnected()) { if (!appsLoaded) loadApps(); loadCurrent(); }
+  if (name === 'screensaver' && isConnected()) loadScreensaver();
+}
+$$('nav button').forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+
+// ---------- connection ----------
+const isConnected = () => state.connected && state.state === 'device';
+
+async function refreshState() {
+  try { state = await api('/api/state'); } catch (e) { $('#statusText').textContent = 'Server not reachable'; $('#dot').className = 'dot bad'; return; }
+  $('#adbWarn').style.display = state.adb ? 'none' : 'block';
+  const dot = $('#dot'), txt = $('#statusText');
+  const name = state.tv?.name || [state.info?.manufacturer, state.info?.model].filter(Boolean).join(' ') || state.connected;
+  if (isConnected()) { dot.className = 'dot ok'; txt.textContent = name; }
+  else if (state.connected && state.state === 'unauthorized') { dot.className = 'dot warn'; txt.textContent = 'Accept “Allow USB debugging?” on the TV'; }
+  else if (state.connected) { dot.className = 'dot bad'; txt.textContent = `TV ${state.state || 'offline'}`; }
+  else { dot.className = 'dot'; txt.textContent = 'Not connected'; }
+
+  $('#connectedCard').style.display = state.connected ? 'block' : 'none';
+  if (state.connected) {
+    $('#tvName').textContent = name;
+    const i = state.info || {};
+    $('#tvDetail').textContent = [state.connected, i.android && `Android ${i.android}`, state.state !== 'device' && state.state].filter(Boolean).join(' · ');
+  }
+  $$('.needs-tv').forEach((el) => el.classList.toggle('locked', !isConnected()));
+  renderSaved();
+}
+
+function renderSaved() {
+  const list = state.tvs || [];
+  $('#saved').innerHTML = list.length ? '' : '<p class="muted">None yet.</p>';
+  for (const tv of list) {
+    const el = document.createElement('div');
+    el.className = 'item';
+    const label = tv.name || [tv.info?.manufacturer, tv.info?.model].filter(Boolean).join(' ') || tv.address;
+    const current = tv.address === state.connected;
+    el.innerHTML = `<div class="grow"><strong>${esc(label)}</strong><small>${esc(tv.address)}${tv.lastConnected ? ' · last used ' + new Date(tv.lastConnected).toLocaleDateString() : ''}</small></div>`;
+    const c = document.createElement('button');
+    c.className = 'btn' + (current ? '' : ' primary'); c.textContent = current ? 'Reconnect' : 'Connect';
+    c.onclick = () => connect(tv.address, c);
+    const f = document.createElement('button');
+    f.className = 'btn danger'; f.textContent = 'Forget';
+    f.onclick = async () => { await api('/api/forget', { body: { address: tv.address } }); refreshState(); };
+    el.append(c, f);
+    $('#saved').append(el);
+  }
+}
+
+async function connect(address, btn) {
+  if (!address) return toast('Enter the TV IP address first.', true);
+  btn = btn || $('#connectBtn');
+  busy(btn, true, 'Connecting…');
+  const p = profiles?.profiles.find((x) => x.id === $('#profile').value);
+  try {
+    const r = await api('/api/connect', { body: { address, profile: p?.id, brand: p?.brand } });
+    if (r.state === 'device') { toast('Connected to your TV 🎉'); appsLoaded = false; ss = null; }
+    else if (r.state === 'unauthorized') toast('Look at the TV: tick “Always allow” and choose Allow, then press Reconnect.', true);
+    else toast(`TV is ${r.state}. Make sure it is on and USB debugging is enabled.`, true);
+  } catch (e) { toast(e.message, true); }
+  busy(btn, false);
+  refreshState();
+}
+$('#connectBtn').onclick = () => connect($('#address').value.trim());
+$('#address').onkeydown = (e) => { if (e.key === 'Enter') connect($('#address').value.trim()); };
+$('#disconnectBtn').onclick = async () => { await api('/api/disconnect', { post: true }); refreshState(); };
+
+$('#scanBtn').onclick = async () => {
+  const b = $('#scanBtn'); busy(b, true, 'Scanning…'); $('#found').innerHTML = '';
+  try {
+    const r = await api('/api/discover');
+    $('#scanInfo').textContent = r.found.length ? `Found ${r.found.length}` : 'No TVs with debugging on were found.';
+    for (const ip of r.found) {
+      const el = document.createElement('div'); el.className = 'item';
+      el.innerHTML = `<div class="grow"><strong>${esc(ip)}</strong><small>Android device with network debugging</small></div>`;
+      const c = document.createElement('button'); c.className = 'btn primary'; c.textContent = 'Connect';
+      c.onclick = () => { $('#address').value = ip; connect(ip, c); };
+      el.append(c); $('#found').append(el);
+    }
+  } catch (e) { toast(e.message, true); }
+  busy(b, false);
+};
+
+$('#pairBtn').onclick = async () => {
+  const b = $('#pairBtn'); busy(b, true, 'Pairing…');
+  try { await api('/api/pair', { body: { address: $('#pairAddr').value.trim(), code: $('#pairCode').value.trim() } }); toast('Paired. Now connect using the IP:port shown under Wireless debugging.'); }
+  catch (e) { toast(e.message, true); }
+  busy(b, false);
+};
+
+async function loadProfiles() {
+  profiles = await api('/api/profiles');
+  const sel = $('#profile');
+  sel.innerHTML = profiles.profiles.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+  try { const saved = localStorage.getItem('profile'); if (saved) sel.value = saved; } catch {}
+  const render = () => {
+    const p = profiles.profiles.find((x) => x.id === sel.value);
+    $('#steps').innerHTML = p.steps.map((s) => `<li>${esc(s)}</li>`).join('');
+    $('#profileNotes').textContent = p.notes || '';
+    try { localStorage.setItem('profile', sel.value); } catch {}
+  };
+  sel.onchange = render; render();
+}
+
+// ---------- remote ----------
+async function key(k, el) {
+  if (!isConnected()) return;
+  if (el) { el.classList.add('pressed'); setTimeout(() => el.classList.remove('pressed'), 150); }
+  try { await api('/api/key', { body: { key: k } }); } catch (e) { toast(e.message, true); }
+}
+$$('.key[data-key]').forEach((el) => el.onclick = () => key(el.dataset.key, el));
+const KB = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'ok', Backspace: 'back', Escape: 'back',
+  h: 'home', H: 'home', ' ': 'playpause', '+': 'volup', '=': 'volup', '-': 'voldown', m: 'mute' };
+document.addEventListener('keydown', (e) => {
+  if (!$('#tab-remote').classList.contains('active') || e.target.matches('input, select, textarea') || e.metaKey || e.ctrlKey) return;
+  const k = KB[e.key]; if (!k) return;
+  e.preventDefault(); key(k, document.querySelector(`.key[data-key="${k}"]`));
+});
+async function sendText() {
+  const text = $('#typeText').value; if (!text) return;
+  try { await api('/api/text', { body: { text } }); $('#typeText').value = ''; } catch (e) { toast(e.message, true); }
+}
+$('#sendText').onclick = sendText;
+$('#typeText').onkeydown = (e) => { if (e.key === 'Enter') sendText(); };
+
+// ---------- apps ----------
+function appButton(a, big) {
+  const b = document.createElement('button');
+  b.className = 'app' + (big ? ' big' : '');
+  b.style.background = a.color || '#3a3f4f';
+  b.textContent = a.name;
+  b.title = a.pkg;
+  b.onclick = async () => {
+    b.disabled = true;
+    try { await api('/api/launch', { body: { pkg: a.pkg } }); toast(`Opening ${a.name}…`); setTimeout(loadCurrent, 2500); }
+    catch (e) { toast(e.message, true); }
+    b.disabled = false;
+  };
+  return b;
+}
+function renderQuick(installed) {
+  const box = $('#quickApps'); box.innerHTML = '';
+  for (const pkg of profiles.defaultChannels) {
+    const known = profiles.apps[pkg];
+    if (installed && !installed.has(pkg)) continue;
+    box.append(appButton({ pkg, name: known?.name || pkg, color: known?.color }, true));
+  }
+  if (!box.children.length) box.innerHTML = '<p class="muted">None of the usual streaming apps were found on this TV.</p>';
+}
+async function loadApps() {
+  $('#allApps').innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const { apps } = await api('/api/apps');
+    appsLoaded = true;
+    renderQuick(new Set(apps.map((a) => a.pkg)));
+    const box = $('#allApps'); box.innerHTML = '';
+    apps.forEach((a) => box.append(appButton(a)));
+    if (!apps.length) box.innerHTML = '<p class="muted">No launchable apps found.</p>';
+  } catch (e) { $('#allApps').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+}
+async function loadCurrent() {
+  try { const { app } = await api('/api/current'); $('#nowPlaying').textContent = app ? `On screen: ${app.name}` : ''; } catch {}
+}
+$('#refreshApps').onclick = loadApps;
+
+// ---------- screensaver ----------
+async function loadScreensaver() {
+  try { ss = await api('/api/screensaver/status'); } catch (e) { return toast(e.message, true); }
+  const badge = $('#ssBadge');
+  badge.textContent = ss.installed ? 'Installed' : 'Not installed'; badge.className = 'badge' + (ss.installed ? ' ok' : '');
+  $('#ssInstall').textContent = ss.installed ? 'Reinstall / update' : 'Install on TV';
+  $('#ssInstall').disabled = !ss.apkBuilt;
+  $('#ssPreview').disabled = !ss.installed;
+  $('#ssInstallText').textContent = ss.apkBuilt
+    ? 'Your photos and videos play through a small screensaver app installed on the TV.'
+    : 'The screensaver app is not built yet. On the laptop run: ./tv-screensaver/build.sh — then reload this page.';
+  $$('.ss-ready').forEach((el) => el.classList.toggle('locked', !ss.installed));
+  const ab = $('#activeBadge');
+  ab.textContent = ss.active ? 'Active' : 'Not active'; ab.className = 'badge' + (ss.active ? ' ok' : '');
+  if (ss.timeoutMin) $('#timeoutMin').value = ss.timeoutMin;
+  const c = ss.config;
+  $('#cfgInterval').value = c.intervalSec; $('#cfgFit').value = c.fit; $('#cfgShuffle').checked = c.shuffle;
+  $('#cfgClock').checked = c.showClock; $('#cfgMotion').checked = c.motion; $('#cfgMute').checked = c.muteVideo;
+  renderThumbs();
+}
+function renderThumbs() {
+  const box = $('#thumbs'); box.innerHTML = '';
+  if (!ss.files.length) { box.innerHTML = '<p class="muted">No photos on the TV yet.</p>'; return; }
+  for (const f of ss.files) {
+    const el = document.createElement('div'); el.className = 'thumb';
+    if (f.thumb && !f.video) el.innerHTML = `<img loading="lazy" src="${esc(f.thumb)}" alt="">`;
+    else if (f.thumb && f.video) el.innerHTML = `<video src="${esc(f.thumb)}#t=1" muted preload="metadata"></video><span class="tag">video</span>`;
+    else el.innerHTML = `<span>${esc(f.name)}</span>${f.video ? '<span class="tag">video</span>' : ''}`;
+    const d = document.createElement('button'); d.className = 'del'; d.textContent = '✕'; d.title = 'Remove from TV';
+    d.onclick = async () => {
+      try { await api('/api/screensaver/file?name=' + encodeURIComponent(f.name), { method: 'DELETE' }); ss.files = ss.files.filter((x) => x !== f); renderThumbs(); }
+      catch (e) { toast(e.message, true); }
+    };
+    el.append(d); box.append(el);
+  }
+}
+async function upload(files) {
+  files = [...files].filter((f) => /^(image|video)\//.test(f.type) || /\.(mkv|mov|webm)$/i.test(f.name));
+  if (!files.length) return toast('Choose photos or videos.', true);
+  const bar = $('#progress'), fill = bar.firstElementChild, info = $('#uploadInfo');
+  bar.style.display = 'block';
+  let done = 0, failed = 0;
+  for (const f of files) {
+    info.textContent = `Sending ${done + 1} of ${files.length} to the TV: ${f.name}`;
+    try {
+      const r = await fetch('/api/screensaver/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
+    } catch (e) { failed++; toast(`${f.name}: ${e.message}`, true); }
+    done++; fill.style.width = (done / files.length * 100) + '%';
+  }
+  info.textContent = `Added ${done - failed} of ${files.length}.` + (failed ? ` ${failed} failed.` : '');
+  setTimeout(() => { bar.style.display = 'none'; fill.style.width = 0; }, 800);
+  loadScreensaver();
+}
+const drop = $('#drop');
+drop.onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = (e) => { upload(e.target.files); e.target.value = ''; };
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); upload(e.dataTransfer.files); };
+
+$('#ssInstall').onclick = async () => {
+  const b = $('#ssInstall'); busy(b, true, 'Installing… (can take a minute)');
+  try { await api('/api/screensaver/install', { post: true }); toast('Screensaver app installed on the TV.'); } catch (e) { toast(e.message, true); }
+  busy(b, false); loadScreensaver();
+};
+$('#ssPreview').onclick = async () => {
+  try { await api('/api/screensaver/preview', { post: true }); toast('Playing on the TV. Press Back on the remote to exit.'); } catch (e) { toast(e.message, true); }
+};
+$('#saveCfg').onclick = async () => {
+  const b = $('#saveCfg'); busy(b, true, 'Saving…');
+  try {
+    await api('/api/screensaver/config', { body: {
+      intervalSec: Number($('#cfgInterval').value), fit: $('#cfgFit').value, shuffle: $('#cfgShuffle').checked,
+      showClock: $('#cfgClock').checked, motion: $('#cfgMotion').checked, muteVideo: $('#cfgMute').checked } });
+    toast('Settings saved to the TV.');
+  } catch (e) { toast(e.message, true); }
+  busy(b, false);
+};
+$('#ssActivate').onclick = async () => {
+  try { await api('/api/screensaver/activate', { body: { timeoutMin: Number($('#timeoutMin').value) } }); toast('Your photos are now the TV screensaver.'); loadScreensaver(); }
+  catch (e) { toast(e.message, true); }
+};
+$('#ssRestore').onclick = async () => {
+  try { const r = await api('/api/screensaver/restore', { post: true }); toast('Restored: ' + r.restored); loadScreensaver(); }
+  catch (e) { toast(e.message, true); }
+};
+
+// ---------- boot ----------
+(async () => {
+  await loadProfiles().catch((e) => toast(e.message, true));
+  await refreshState();
+  let tab = 'connect';
+  try { tab = localStorage.getItem('tab') || (isConnected() ? 'remote' : 'connect'); } catch {}
+  showTab(tab);
+  setInterval(refreshState, 8000);
+})();
+</script>
+</body>
+</html>
