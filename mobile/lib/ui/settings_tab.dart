@@ -34,7 +34,31 @@ class SettingsTab extends StatelessWidget {
         onTap: () => runTv(context, () => app.connect(), success: 'Connected'),
       ),
       if (app.connected)
-        ListTile(leading: const Icon(Icons.link_off), title: const Text('Disconnect'), onTap: app.disconnect),
+        ListTile(leading: const Icon(Icons.link_off), title: const Text('Disconnect'), onTap: app.userDisconnect),
+
+      const _Header('Connections'),
+      ListTile(
+        leading: Icon(Icons.pin_outlined, color: app.remoteConnected ? Colors.green : null),
+        title: Text(tv?.remotePaired == true ? 'Remote: paired' : 'Pair as remote'),
+        subtitle: Text(app.remoteConnected
+            ? 'Connected. Keys and apps work without Developer mode.'
+            : tv?.remotePaired == true
+                ? 'Not connected right now. Tap to pair again if the TV forgot this phone.'
+                : 'Pair with a code shown on the TV. No Developer mode needed.'),
+        onTap: tv == null ? null : () => _pair(context, app),
+      ),
+      ListTile(
+        leading: Icon(Icons.developer_mode, color: app.adbConnected ? Colors.green : null),
+        title: const Text('Developer mode'),
+        subtitle: Text(app.adbConnected
+            ? 'Connected. Screensaver, typing and the full app list are available.'
+            : app.adbWaitingForAllow
+                ? 'Look at your TV: tick "Always allow", then choose Allow.'
+                : app.adbError ?? 'Not connected. Needed for the screensaver. Tap to connect.'),
+        onTap: app.adbConnected || app.adbWaitingForAllow
+            ? null
+            : () => runTv(context, app.connectDeveloperMode, success: 'Developer mode connected'),
+      ),
 
       const _Header('Help'),
       ExpansionTile(
@@ -55,6 +79,7 @@ class SettingsTab extends StatelessWidget {
           Text('• Switch the TV on. Most TVs turn their Wi-Fi off in standby.\n'
               '• Make sure the phone and the TV are on the same Wi-Fi network (not a guest network).\n'
               '• Check the TV\'s IP address hasn\'t changed: Settings → Network & Internet → your Wi-Fi.\n'
+              '• If pairing worked before, tap "Pair as remote" above to pair again.\n'
               '• Turn USB debugging off and on again on the TV, or restart the TV.\n'
               '• iPhone: Settings → Privacy & Security → Local Network → turn on Connect TV.'),
         ],
@@ -77,6 +102,21 @@ class SettingsTab extends StatelessWidget {
       const SizedBox(height: 24),
     ]);
   }
+
+  Future<void> _pair(BuildContext context, AppState app) => showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Pair as remote'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('Switch the TV on. It will show a code for you to type here.'),
+              const SizedBox(height: 16),
+              PairPanel(address: () => app.tv!.address, onPaired: () => Navigator.pop(ctx)),
+            ]),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+        ),
+      );
 
   Future<void> _rename(BuildContext context, AppState app) async {
     final c = TextEditingController(text: app.tv!.displayName);

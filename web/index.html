@@ -168,6 +168,7 @@
           <div class="key" data-key="voldown">🔉 −</div>
           <div class="key" data-key="mute">🔇</div>
           <div class="key" data-key="volup">🔊 +</div>
+          <span id="volLevel" class="muted" style="align-self:center;min-width:90px"></span>
         </div>
         <div class="keys">
           <div class="key" data-key="rewind">⏪</div>
@@ -178,6 +179,21 @@
           <input type="text" id="typeText" placeholder="Type on the TV (search boxes etc.)">
           <button class="btn" id="sendText">Send</button>
         </div>
+        <div class="row" style="width:100%;max-width:420px">
+          <input type="text" id="openUrl" placeholder="Open a link on the TV (YouTube, Netflix…)">
+          <button class="btn" id="openUrlBtn">Open</button>
+        </div>
+        <div class="row" style="width:100%;max-width:420px">
+          <select id="sleepMin" aria-label="Sleep timer">
+            <option value="0">Sleep timer: off</option>
+            <option value="15">Turn off in 15 min</option><option value="30">Turn off in 30 min</option>
+            <option value="60">Turn off in 60 min</option><option value="90">Turn off in 90 min</option>
+            <option value="120">Turn off in 120 min</option>
+          </select>
+          <span id="sleepLeft" class="muted"></span>
+          <button class="btn" id="screenBtn">See TV screen</button>
+        </div>
+        <img id="screenImg" alt="What's on the TV" style="display:none;width:100%;max-width:640px;border-radius:12px;background:#000">
         <p class="kbd-hint">Keyboard: arrows · Enter = OK · Backspace/Esc = Back · H = Home · Space = Play/Pause · +/− = volume</p>
       </div>
     </div>
@@ -214,6 +230,11 @@
 
     <div class="card needs-tv ss-ready">
       <h2>Your photos & videos</h2>
+      <div class="row" style="margin-bottom:12px">
+        <label class="row">Album <select id="ssAlbum"><option value="">Main</option></select></label>
+        <button class="btn" id="newAlbum">New album</button>
+        <button class="btn" id="delAlbum">Delete album</button>
+      </div>
       <div class="drop" id="drop">
         <strong>Drop photos or videos here</strong><br>
         <span class="muted">or click to choose · JPG, PNG, WEBP, GIF, MP4, MOV, MKV, WEBM</span>
@@ -233,7 +254,12 @@
         <label>Show clock <input type="checkbox" id="cfgClock"></label>
         <label>Slow zoom motion <input type="checkbox" id="cfgMotion"></label>
         <label>Mute videos <input type="checkbox" id="cfgMute"></label>
+        <label>Change photos with <select id="cfgTransition"><option value="fade">Fade</option><option value="slide">Slide</option><option value="none">Cut</option></select></label>
+        <label>Show date <input type="checkbox" id="cfgDate"></label>
+        <label title="On days with old photos, show photos taken on this day in earlier years">On this day <input type="checkbox" id="cfgOnThisDay"></label>
+        <label>Album that plays <select id="cfgAlbum"><option value="">Main</option></select></label>
       </div>
+      <p class="muted">Schedules (e.g. a holiday album), captions, weather and sound for single videos are set in the phone app.</p>
       <div class="row" style="margin-top:14px"><button class="btn" id="saveCfg">Save settings</button></div>
     </div>
 
@@ -388,7 +414,14 @@ async function loadProfiles() {
 async function key(k, el) {
   if (!isConnected()) return;
   if (el) { el.classList.add('pressed'); setTimeout(() => el.classList.remove('pressed'), 150); }
-  try { await api('/api/key', { body: { key: k } }); } catch (e) { toast(e.message, true); }
+  try { await api('/api/key', { body: { key: k } }); } catch (e) { return toast(e.message, true); }
+  if (['volup', 'voldown', 'mute'].includes(k)) setTimeout(showVolume, 350);
+}
+async function showVolume() {
+  try {
+    const v = await api('/api/volume');
+    $('#volLevel').textContent = v.level == null ? '' : v.muted ? 'Muted' : `Volume ${v.level} / ${v.max}`;
+  } catch { /* not connected */ }
 }
 $$('.key[data-key]').forEach((el) => el.onclick = () => key(el.dataset.key, el));
 const KB = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'ok', Backspace: 'back', Escape: 'back',
@@ -403,6 +436,24 @@ async function sendText() {
   try { await api('/api/text', { body: { text } }); $('#typeText').value = ''; } catch (e) { toast(e.message, true); }
 }
 $('#sendText').onclick = sendText;
+async function openUrl() {
+  const url = $('#openUrl').value.trim(); if (!url) return;
+  try { await api('/api/open', { body: { url } }); toast('Opening on the TV…'); $('#openUrl').value = ''; } catch (e) { toast(e.message, true); }
+}
+$('#openUrlBtn').onclick = openUrl;
+$('#openUrl').onkeydown = (e) => { if (e.key === 'Enter') openUrl(); };
+function showSleep(secs) { $('#sleepLeft').textContent = secs ? `TV turns off in ${Math.ceil(secs / 60)} min` : ''; }
+$('#sleepMin').onchange = async () => {
+  try { const r = await api('/api/sleep', { body: { minutes: Number($('#sleepMin').value) } }); showSleep(r.secondsLeft); toast(r.secondsLeft ? 'Sleep timer set' : 'Sleep timer off'); }
+  catch (e) { toast(e.message, true); }
+};
+$('#screenBtn').onclick = async () => {
+  try {
+    const r = await fetch('/api/screenshot', { cache: 'no-store' });
+    if (!r.ok) throw new Error((await r.json()).error);
+    const img = $('#screenImg'); URL.revokeObjectURL(img.src); img.src = URL.createObjectURL(await r.blob()); img.style.display = 'block';
+  } catch (e) { toast(e.message, true); }
+};
 $('#typeText').onkeydown = (e) => { if (e.key === 'Enter') sendText(); };
 
 // ---------- apps ----------
@@ -446,8 +497,16 @@ async function loadCurrent() {
 $('#refreshApps').onclick = loadApps;
 
 // ---------- screensaver ----------
+let ssAlbum = '';
 async function loadScreensaver() {
-  try { ss = await api('/api/screensaver/status'); } catch (e) { return toast(e.message, true); }
+  try { ss = await api('/api/screensaver/status?album=' + encodeURIComponent(ssAlbum)); } catch (e) { return toast(e.message, true); }
+  if (ssAlbum && !(ss.albums || []).includes(ssAlbum)) { ssAlbum = ''; return loadScreensaver(); }
+  const opts = (sel, value) => {
+    $(sel).innerHTML = '<option value="">Main</option>' + (ss.albums || []).map((a) => `<option>${esc(a)}</option>`).join('');
+    $(sel).value = value;
+  };
+  opts('#ssAlbum', ssAlbum); opts('#cfgAlbum', ss.config.album || '');
+  $('#delAlbum').disabled = !ssAlbum;
   const badge = $('#ssBadge');
   badge.textContent = ss.installed ? 'Installed' : 'Not installed'; badge.className = 'badge' + (ss.installed ? ' ok' : '');
   $('#ssInstall').textContent = ss.installed ? 'Reinstall / update' : 'Install on TV';
@@ -463,11 +522,12 @@ async function loadScreensaver() {
   const c = ss.config;
   $('#cfgInterval').value = c.intervalSec; $('#cfgFit').value = c.fit; $('#cfgShuffle').checked = c.shuffle;
   $('#cfgClock').checked = c.showClock; $('#cfgMotion').checked = c.motion; $('#cfgMute').checked = c.muteVideo;
+  $('#cfgTransition').value = c.transition || 'fade'; $('#cfgDate').checked = !!c.showDate; $('#cfgOnThisDay').checked = !!c.onThisDay;
   renderThumbs();
 }
 function renderThumbs() {
   const box = $('#thumbs'); box.innerHTML = '';
-  if (!ss.files.length) { box.innerHTML = '<p class="muted">No photos on the TV yet.</p>'; return; }
+  if (!ss.files.length) { box.innerHTML = '<p class="muted">No photos in this album yet.</p>'; return; }
   for (const f of ss.files) {
     const el = document.createElement('div'); el.className = 'thumb';
     if (f.thumb && !f.video) el.innerHTML = `<img loading="lazy" src="${esc(f.thumb)}" alt="">`;
@@ -475,7 +535,7 @@ function renderThumbs() {
     else el.innerHTML = `<span>${esc(f.name)}</span>${f.video ? '<span class="tag">video</span>' : ''}`;
     const d = document.createElement('button'); d.className = 'del'; d.textContent = '✕'; d.title = 'Remove from TV';
     d.onclick = async () => {
-      try { await api('/api/screensaver/file?name=' + encodeURIComponent(f.name), { method: 'DELETE' }); ss.files = ss.files.filter((x) => x !== f); renderThumbs(); }
+      try { await api('/api/screensaver/file?name=' + encodeURIComponent(f.name) + '&album=' + encodeURIComponent(ssAlbum), { method: 'DELETE' }); ss.files = ss.files.filter((x) => x !== f); renderThumbs(); }
       catch (e) { toast(e.message, true); }
     };
     el.append(d); box.append(el);
@@ -490,7 +550,7 @@ async function upload(files) {
   for (const f of files) {
     info.textContent = `Sending ${done + 1} of ${files.length} to the TV: ${f.name}`;
     try {
-      const r = await fetch('/api/screensaver/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+      const r = await fetch('/api/screensaver/upload?name=' + encodeURIComponent(f.name) + '&album=' + encodeURIComponent(ssAlbum), { method: 'POST', body: f });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
     } catch (e) { failed++; toast(`${f.name}: ${e.message}`, true); }
     done++; fill.style.width = (done / files.length * 100) + '%';
@@ -499,6 +559,17 @@ async function upload(files) {
   setTimeout(() => { bar.style.display = 'none'; fill.style.width = 0; }, 800);
   loadScreensaver();
 }
+$('#ssAlbum').onchange = () => { ssAlbum = $('#ssAlbum').value; loadScreensaver(); };
+$('#newAlbum').onclick = async () => {
+  const name = (prompt('Name of the new album (e.g. Family, Travel, Diwali):') || '').trim(); if (!name) return;
+  try { await api('/api/screensaver/album', { body: { name } }); ssAlbum = name; toast(`Album "${name}" created.`); loadScreensaver(); }
+  catch (e) { toast(e.message, true); }
+};
+$('#delAlbum').onclick = async () => {
+  if (!ssAlbum || !confirm(`Delete the album "${ssAlbum}" and its photos from the TV?`)) return;
+  try { await api('/api/screensaver/album?name=' + encodeURIComponent(ssAlbum), { method: 'DELETE' }); ssAlbum = ''; toast('Album deleted.'); loadScreensaver(); }
+  catch (e) { toast(e.message, true); }
+};
 const drop = $('#drop');
 drop.onclick = () => $('#fileInput').click();
 $('#fileInput').onchange = (e) => { upload(e.target.files); e.target.value = ''; };
@@ -519,7 +590,8 @@ $('#saveCfg').onclick = async () => {
   try {
     await api('/api/screensaver/config', { body: {
       intervalSec: Number($('#cfgInterval').value), fit: $('#cfgFit').value, shuffle: $('#cfgShuffle').checked,
-      showClock: $('#cfgClock').checked, motion: $('#cfgMotion').checked, muteVideo: $('#cfgMute').checked } });
+      showClock: $('#cfgClock').checked, motion: $('#cfgMotion').checked, muteVideo: $('#cfgMute').checked,
+      transition: $('#cfgTransition').value, showDate: $('#cfgDate').checked, onThisDay: $('#cfgOnThisDay').checked, album: $('#cfgAlbum').value } });
     toast('Settings saved to the TV.');
   } catch (e) { toast(e.message, true); }
   busy(b, false);

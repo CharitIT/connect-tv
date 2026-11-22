@@ -2,12 +2,13 @@
 
 Control an Android TV / Google TV from your laptop over Wi-Fi, and show your own photos and videos as the TV's screensaver.
 
-- **Remote**: D-pad, OK, Back, Home, volume, power, playback keys, and typing into search boxes (or use your keyboard).
+- **Remote**: D-pad, OK, Back, Home, volume, power, playback keys, and typing into search boxes (or use your keyboard). Open a YouTube/Netflix link on the TV, see the TV screen, and set a sleep timer.
 - **Apps**: one-click switching to Netflix, Prime Video, Disney+, YouTube, and every other app installed on the TV.
-- **Custom screensaver**: drag photos/videos into the browser; they are sent to a small screensaver app on the TV with crossfades, slow zoom, clock, shuffle, and video support.
+- **Custom screensaver**: drag photos/videos into the browser; they are sent to a small screensaver app on the TV with fade or slide transitions, slow zoom, clock, date, weather, captions, shuffle, and video support. Photos can be sorted into **albums**, and the phone app can schedule them (for example a Diwali album in late October, or a night album after 10 pm). **On this day** shows photos taken on today's date in earlier years.
+- **Stays connected**: the laptop server and the phone app reconnect by themselves when the TV comes back from standby.
 
 There are two ways to use it:
-- **Phone app (Android + iPhone)**: in [`mobile/`](mobile/README.md). It controls the TV directly, with no computer needed, and has a step-by-step setup guide.
+- **Phone app (Android + iPhone)**: in [`mobile/`](mobile/README.md). It controls the TV directly, with no computer needed, and has a step-by-step setup guide. The remote and app switching work **without Developer mode**: you pair once with a code shown on the TV.
 - **Laptop version**: described below.
 
 The laptop version is a zero-dependency Node.js server (`server.js`) that talks to the TV with `adb`, plus a single-page web UI (`web/index.html`) and a tiny Android screensaver app (`tv-screensaver/`).

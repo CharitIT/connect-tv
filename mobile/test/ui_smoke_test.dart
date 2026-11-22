@@ -37,16 +37,22 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('Next'));
     await t.pumpAndSettle();
-    expect(find.text('Turn on Developer mode'), findsOneWidget);
-    expect(find.textContaining('Android TV OS build'), findsWidgets);
-
-    await t.tap(find.text('I\'ve done this'));
-    await t.pumpAndSettle();
+    // Step 2: find the TV and pair with a code (no Developer mode needed).
     expect(find.text('Connect to your TV'), findsOneWidget);
     expect(find.text('Find my TV'), findsOneWidget);
+    expect(find.text('Show code on TV'), findsOneWidget);
     // Can't continue without a connection.
     final next = t.widget<FilledButton>(find.widgetWithText(FilledButton, 'Next'));
     expect(next.onPressed, isNull);
+
+    // The fallback goes to the Developer mode steps for the chosen brand.
+    await t.tap(find.text('No code on the TV? Connect with Developer mode instead'));
+    await t.pumpAndSettle();
+    expect(find.text('Developer mode (for the screensaver)'), findsOneWidget);
+    expect(find.textContaining('Android TV OS build'), findsWidgets);
+    await t.scrollUntilVisible(find.text('I\'ve done this — connect'), 200,
+        scrollable: find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down).last);
+    expect(find.text('I\'ve done this — connect'), findsOneWidget);
   });
 
   testWidgets('home tabs render when the TV is not connected', (t) async {
@@ -65,6 +71,9 @@ void main() {
 
     await t.tap(find.text('Settings'));
     await t.pump();
+    expect(find.text('Pair as remote'), findsOneWidget);
+    expect(find.text('Developer mode'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Forget this TV'), 200);
     expect(find.text('How to turn on Developer mode'), findsOneWidget);
     expect(find.text('Forget this TV'), findsOneWidget);
     s.disconnect();

@@ -25,18 +25,25 @@ class _ConnectTvAppState extends State<ConnectTvApp> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (widget.state.onboarded) widget.state.autoConnect();
+    widget.state.startWatching();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.state.stopWatching();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    // Reconnect when the app comes back to the foreground.
-    if (s == AppLifecycleState.resumed && widget.state.onboarded) widget.state.autoConnect();
+    // Reconnect when the app comes back to the foreground, and keep checking while it's open.
+    if (s == AppLifecycleState.resumed) {
+      if (widget.state.onboarded) widget.state.autoConnect();
+      widget.state.startWatching();
+    } else if (s == AppLifecycleState.paused) {
+      widget.state.stopWatching();
+    }
   }
 
   @override

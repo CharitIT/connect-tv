@@ -2,12 +2,24 @@
 
 A Flutter app that controls an Android TV / Google TV **directly from the phone** over Wi-Fi. No computer is needed after it's installed.
 
-- **Setup guide** on first launch: choose your TV brand → turn on Developer mode → find and connect → set up the screensaver → feature tour.
-- **Remote**: D-pad, OK, Back, Home, volume, mute, power, playback, and typing into the TV.
+- **Setup guide** on first launch: choose your TV brand → find the TV and **pair with a code shown on the TV** → Developer mode (optional, for the screensaver) → set up the screensaver → feature tour.
+- **Remote**: D-pad or **swipe touchpad**, OK, Back, Home, volume, mute, power, playback, and typing or **speaking** (the keyboard's 🎤) into the TV.
+- **More**: see the TV screen live, open a YouTube/Netflix link on the TV (Android: Share → Connect TV), sleep timer, and app bedtime.
 - **Apps**: quick-switch tiles (Netflix, Prime Video, Disney+, YouTube, …) and every app on the TV.
-- **Screensaver**: install the screensaver app on the TV, add photos and videos from the phone gallery, change settings, preview, set it as the screensaver, or restore the original.
+- **Screensaver**: install the screensaver app on the TV, add photos and videos into **albums** (or **sync a phone album** so new photos appear on the TV automatically), choose which album plays (with **schedules** by date or time), captions, per-video sound, transitions, date and weather, preview, set it as the screensaver, or restore the original.
 
 ## How it works
+
+The app talks to the TV in two ways:
+
+| | Needs | Used for |
+|---|---|---|
+| **Android TV Remote protocol** (`lib/atv/`), the one Google's own TV remote uses | Pairing once with a 6-character code shown on the TV | Keys, volume, power, opening apps, which app is on screen |
+| **ADB** (`lib/adb/`) | Developer mode + USB debugging on the TV | Screensaver, typing, full app list; also keys and apps if not paired |
+
+The remote protocol uses TLS with a self-signed client certificate made from the phone's RSA key (`lib/atv/atv_cert.dart`). Pairing is on port 6467 and the remote on port 6466, with hand-encoded protobuf messages, so no extra packages are needed. The TV remembers the certificate, so pairing is a one-time step.
+
+If the TV is on but its ADB port is closed (common after a TV restart), the app says so and tells the user to turn USB debugging off and on.
 
 The app has its own ADB client written in Dart (`lib/adb/`). It connects to the TV's `adbd` on port 5555 and signs in with an RSA key that is generated once and stored on the phone. The first connection shows "Allow USB debugging?" on the TV. Everything else mirrors the laptop `server.js` (`lib/tv/tv_service.dart`).
 
@@ -17,15 +29,23 @@ The TV screensaver APK and `devices.json` are bundled as assets. Refresh them wi
 lib/
   adb/adb_crypto.dart      RSA key, token signing, Android public-key format
   adb/adb_client.dart      ADB wire protocol: connect/auth, shell, push (sync)
+  atv/atv_cert.dart        Self-signed client certificate + tiny DER encoder/parser
+  atv/atv_remote.dart      Android TV Remote protocol: pairing (6467) and remote (6466)
   tv/tv_service.dart       TV actions (keys, apps, screensaver) + Wi-Fi discovery
   tv/catalog.dart          Brand setup guides + app names from assets/devices.json
   app_state.dart           Saved TV, key, connection status, auto-reconnect
   ui/setup_wizard.dart     First-run guide
-  ui/home_shell.dart       Tabs: Remote · Apps · Screensaver · Settings
+  ui/home_shell.dart       Tabs: Remote · Apps · Screensaver · Settings; receives Android shared links
+  ui/screen_page.dart      Live picture of the TV screen
+  ui/timers_page.dart      Sleep timer and app bedtime
+  ui/album_schedule_page.dart  Which album plays + schedule rules
+  ui/sync_page.dart        Link phone albums to TV albums
+  sync/album_sync.dart     Mirrors a phone album to a TV album (photo_manager)
 tool/
   sync_assets.sh           Copy devices.json + screensaver APK into assets/
   make_icons.sh            Render the app icon (assets/icon/*.svg) for Android + iOS
   adb_live_test.dart       Test the ADB client against a real TV from the Mac
+  atv_live_test.dart       Test pairing and the remote from the Mac (check | pair | key)
 ```
 
 ## Build and run

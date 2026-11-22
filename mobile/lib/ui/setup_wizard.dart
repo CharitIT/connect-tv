@@ -1,5 +1,5 @@
-// First-run guide: welcome → choose TV brand → turn on Developer mode → find & connect →
-// set up the screensaver → feature tour.
+// First-run guide: welcome → choose TV brand → find the TV & pair with a code →
+// Developer mode (optional, for the screensaver) → set up the screensaver → feature tour.
 
 import 'package:flutter/material.dart';
 
@@ -29,7 +29,7 @@ class _SetupWizardState extends State<SetupWizard> {
     final app = AppScope.of(context);
     final canNext = switch (_page) {
       1 => app.selectedProfileId != null,
-      3 => app.connected,
+      2 || 3 => app.connected,
       _ => true,
     };
     final last = _page == _count - 1;
@@ -48,9 +48,9 @@ class _SetupWizardState extends State<SetupWizard> {
         children: [
           const _Welcome(),
           const _ChooseBrand(),
+          _Connect(onConnected: () => _go(3), onUseDevMode: () => _go(3)),
           const _DeveloperMode(),
-          _Connect(onConnected: () => _go(4)),
-          const _ScreensaverSetup(),
+          _ScreensaverSetup(key: ValueKey(app.adbConnected)),
           const _Done(),
         ],
       ),
@@ -71,7 +71,7 @@ class _SetupWizardState extends State<SetupWizard> {
                         : () => _go(_page + 1),
                 child: Text(switch (_page) {
                   0 => 'Get started',
-                  2 => 'I\'ve done this',
+                  3 when !app.adbConnected => 'Skip for now',
                   _ when last => 'Start using Connect TV',
                   _ => 'Next',
                 }),
@@ -170,47 +170,12 @@ class _ChooseBrand extends StatelessWidget {
   }
 }
 
-// ---------- 2. Developer mode ----------
-
-class _DeveloperMode extends StatelessWidget {
-  const _DeveloperMode();
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppScope.of(context);
-    final p = app.catalog.profile(app.selectedProfileId);
-    // The last step is about connecting, which happens on the next page.
-    final steps = p.steps.where((s) => !s.startsWith('Tap Connect')).toList();
-    return _Step(
-      icon: Icons.developer_mode,
-      title: 'Turn on Developer mode',
-      subtitle: 'A one-time setting on the TV that lets this phone control it. Use your TV remote:',
-      children: [
-        for (var i = 0; i < steps.length; i++)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(radius: 14, child: Text('${i + 1}')),
-            title: Text(steps[i]),
-          ),
-        if (p.notes != null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(children: [const Icon(Icons.info_outline), const SizedBox(width: 12), Expanded(child: Text(p.notes!))]),
-            ),
-          ),
-        const SizedBox(height: 8),
-        const Text('Tip: write down the IP address. You\'ll need it on the next screen.'),
-      ],
-    );
-  }
-}
-
-// ---------- 3. Connect ----------
+// ---------- 2. Find the TV and pair with a code ----------
 
 class _Connect extends StatefulWidget {
   final VoidCallback onConnected;
-  const _Connect({required this.onConnected});
+  final VoidCallback onUseDevMode;
+  const _Connect({required this.onConnected, required this.onUseDevMode});
 
   @override
   State<_Connect> createState() => _ConnectState();
@@ -236,101 +201,183 @@ class _ConnectState extends State<_Connect> {
     try {
       final found = await discoverTvs();
       if (mounted) setState(() => _found = found);
+      if (found.length == 1) _ip.text = found.first;
     } catch (e) {
       if (mounted) showMessage(context, 'Could not scan the Wi-Fi: $e', error: true);
     }
     if (mounted) setState(() => _scanning = false);
   }
 
-  Future<void> _connect(String ip) async {
-    _ip.text = ip;
-    final app = AppScope.read(context);
-    final ok = await runTv(context, () => app.connect(ip));
-    if (ok && mounted) {
-      showMessage(context, 'Connected to ${app.tv?.displayName}');
-      widget.onConnected();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final busy = app.status != ConnStatus.disconnected && !app.connected;
     return _Step(
       icon: Icons.wifi_tethering,
       title: 'Connect to your TV',
-      subtitle: 'Make sure this phone is on the same Wi-Fi as the TV.',
+      subtitle: 'Switch the TV on and make sure this phone is on the same Wi-Fi.',
       children: [
         TextField(
           controller: _ip,
-          enabled: !busy,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: 'TV IP address',
             hintText: 'e.g. 192.168.1.40',
+            helperText: 'On the TV: Settings → Network & Internet → your Wi-Fi',
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.router_outlined),
           ),
-          onSubmitted: busy ? null : _connect,
         ),
         const SizedBox(height: 12),
-        Row(children: [
-          Expanded(
-            child: FilledButton.icon(
-              icon: const Icon(Icons.link),
-              label: const Text('Connect'),
-              onPressed: busy ? null : () => _connect(_ip.text),
-            ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            icon: _scanning
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.search),
-            label: const Text('Find my TV'),
-            onPressed: busy || _scanning ? null : _scan,
-          ),
-        ]),
+        OutlinedButton.icon(
+          icon: _scanning
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.search),
+          label: const Text('Find my TV'),
+          onPressed: _scanning ? null : _scan,
+        ),
         if (_found != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           if (_found!.isEmpty)
-            const Text('No TVs found. Check that USB debugging is on and the TV is on this Wi-Fi, or type the IP address.')
+            const Text('No TVs found. Check the TV is on and on this Wi-Fi, or type its IP address.')
           else
             for (final ip in _found!)
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.tv),
                   title: Text(ip),
-                  subtitle: const Text('TV with debugging turned on'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: busy ? null : () => _connect(ip),
+                  subtitle: const Text('Android TV / Google TV'),
+                  trailing: _ip.text == ip ? const Icon(Icons.check, color: Colors.green) : null,
+                  onTap: () => setState(() => _ip.text = ip),
                 ),
               ),
         ],
         const SizedBox(height: 20),
-        if (app.status == ConnStatus.preparingKey)
-          const _Progress('Creating a secure key for this phone (first time only)…'),
-        if (app.status == ConnStatus.connecting) const _Progress('Connecting…'),
-        if (app.status == ConnStatus.waitingForAllow)
-          Card(
-            color: Theme.of(context).colorScheme.tertiaryContainer,
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [Icon(Icons.touch_app), SizedBox(width: 8), Text('Look at your TV now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
-                SizedBox(height: 8),
-                Text('It shows "Allow USB debugging?".\n1. Tick "Always allow from this computer".\n2. Choose Allow.'),
-              ]),
-            ),
-          ),
         if (app.connected)
           Card(
             child: ListTile(
               leading: const Icon(Icons.check_circle, color: Colors.green),
               title: Text('Connected to ${app.tv?.displayName}'),
-              subtitle: Text('Android ${app.tv?.info?.android ?? ''}'),
+              subtitle: const Text('Tap Next to continue.'),
             ),
+          )
+        else ...[
+          const Text('Pair this phone with the TV. The TV shows a code, and you type it here. '
+              'No special TV settings are needed.'),
+          const SizedBox(height: 12),
+          PairPanel(address: () => _ip.text, onPaired: widget.onConnected),
+          if (app.status == ConnStatus.preparingKey) ...[
+            const SizedBox(height: 12),
+            const _Progress('Creating a secure key for this phone (first time only)…'),
+          ],
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: widget.onUseDevMode,
+            child: const Text('No code on the TV? Connect with Developer mode instead'),
           ),
+        ],
+      ],
+    );
+  }
+}
+
+// ---------- 3. Developer mode (optional: screensaver, typing, all apps) ----------
+
+class _DeveloperMode extends StatefulWidget {
+  const _DeveloperMode();
+
+  @override
+  State<_DeveloperMode> createState() => _DeveloperModeState();
+}
+
+class _DeveloperModeState extends State<_DeveloperMode> {
+  final _ip = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _ip.text = AppScope.read(context).tv?.address ?? '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final p = app.catalog.profile(app.selectedProfileId);
+    final steps = p.steps.where((s) => !s.startsWith('Tap Connect')).toList();
+    final waiting = app.adbWaitingForAllow || app.status == ConnStatus.waitingForAllow;
+    final connecting = app.status == ConnStatus.connecting || app.status == ConnStatus.preparingKey;
+    return _Step(
+      icon: Icons.developer_mode,
+      title: 'Developer mode (for the screensaver)',
+      subtitle: app.connected
+          ? 'Optional. The remote already works. Developer mode adds your photo screensaver, typing, and the full app list. '
+              'You can skip this and do it later.'
+          : 'Turn on Developer mode with your TV remote, then connect.',
+      children: [
+        if (app.adbConnected)
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.check_circle, color: Colors.green),
+              title: Text('Developer mode is connected'),
+              subtitle: Text('Tap Next to set up the screensaver.'),
+            ),
+          )
+        else ...[
+          for (var i = 0; i < steps.length; i++)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(radius: 14, child: Text('${i + 1}')),
+              title: Text(steps[i]),
+            ),
+          if (p.notes != null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(children: [const Icon(Icons.info_outline), const SizedBox(width: 12), Expanded(child: Text(p.notes!))]),
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (!app.connected) ...[
+            TextField(
+              controller: _ip,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'TV IP address',
+                hintText: 'e.g. 192.168.1.40',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.router_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (waiting)
+            Card(
+              color: Theme.of(context).colorScheme.tertiaryContainer,
+              child: const Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [Icon(Icons.touch_app), SizedBox(width: 8), Text('Look at your TV now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
+                  SizedBox(height: 8),
+                  Text('It shows "Allow USB debugging?".\n1. Tick "Always allow from this computer".\n2. Choose Allow.'),
+                ]),
+              ),
+            )
+          else if (connecting)
+            const _Progress('Connecting…')
+          else
+            FilledButton.icon(
+              icon: const Icon(Icons.link),
+              label: const Text('I\'ve done this — connect'),
+              onPressed: () => runTv(
+                context,
+                () => app.connected ? app.connectDeveloperMode() : app.connect(_ip.text),
+                success: 'Developer mode connected',
+              ),
+            ),
+          if (app.adbError != null && !waiting && !connecting) ...[
+            const SizedBox(height: 8),
+            Text(app.adbError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ],
       ],
     );
   }
@@ -351,7 +398,7 @@ class _Progress extends StatelessWidget {
 // ---------- 4. Screensaver ----------
 
 class _ScreensaverSetup extends StatefulWidget {
-  const _ScreensaverSetup();
+  const _ScreensaverSetup({super.key});
 
   @override
   State<_ScreensaverSetup> createState() => _ScreensaverSetupState();
@@ -373,7 +420,7 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
 
   Future<void> _refresh() async {
     final app = AppScope.read(context);
-    if (!app.connected) return;
+    if (!app.adbConnected) return;
     try {
       final s = await app.service.screensaverStatus();
       if (!mounted) return;
@@ -396,6 +443,14 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
   @override
   Widget build(BuildContext context) {
     final busy = _busy != null;
+    if (!AppScope.of(context).adbConnected) {
+      return const _Step(
+        icon: Icons.photo_library_outlined,
+        title: 'Your photo screensaver',
+        subtitle: 'The screensaver needs Developer mode (the previous step). '
+            'You can set it up any time later from the Screensaver tab.',
+      );
+    }
     return _Step(
       icon: Icons.photo_library_outlined,
       title: 'Your photo screensaver',

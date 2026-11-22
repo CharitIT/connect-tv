@@ -23,7 +23,13 @@ const SS_PREVIEW = `${SS_PKG}/.PreviewActivity`;
 const SS_DIR_APP = `/sdcard/Android/data/${SS_PKG}/files/screensaver`;
 const SS_DIR_PUBLIC = '/sdcard/Pictures/TVScreensaver';
 const MEDIA_EXT = /\.(jpe?g|png|webp|gif|bmp|mp4|m4v|webm|mkv|mov)$/i;
-const DEFAULT_CONFIG = { intervalSec: 12, shuffle: true, showClock: true, fit: 'cover', motion: true, muteVideo: true };
+const DEFAULT_CONFIG = {
+  intervalSec: 12, shuffle: true, showClock: true, fit: 'cover', motion: true, muteVideo: true,
+  showDate: false, transition: 'fade', album: '', schedule: [], soundOn: [], captions: {}, weather: null,
+  onThisDay: false, dates: {},
+};
+// Album names: letters, digits, spaces, "_" and "-". "" is the Main album (the screensaver folder itself).
+const ALBUM_RE = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/;
 
 const PORT = Number(process.env.PORT) || 8765;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -112,6 +118,11 @@ function localSubnets() {
   }
   return [...new Set(out)];
 }
+// Ports a TV answers on even without Developer mode: Android TV Remote (6466/6467) and Google Cast (8008/8009).
+const TV_SERVICE_PORTS = [6466, 6467, 8009, 8008];
+const ADB_OFF_MESSAGE = 'Your TV is on, but it isn\'t accepting connections right now. This usually happens after the TV restarts. ' +
+  'On the TV, open Settings → System → Developer options, turn USB debugging off and then on again, then click Connect.';
+
 function probe(ip, port, timeout = 450) {
   return new Promise((resolve) => {
     const s = net.connect({ host: ip, port });
@@ -217,8 +228,29 @@ async function grantMediaPermissions() {
     await sh(`pm grant ${SS_PKG} ${p} 2>/dev/null`);
   }
 }
-async function listScreensaverFiles() {
+function albumName(a) {
+  const name = String(a || '').trim();
+  if (name && !ALBUM_RE.test(name)) throw httpError(400, 'Album names can use letters, numbers, spaces, - and _.');
+  return name;
+}
+async function albumDir(album) {
   const dir = await screensaverDir();
+  return album ? `${dir}/albums/${album}` : dir;
+}
+async function listAlbums() {
+  const dir = await screensaverDir();
+  const r = await sh(`ls -1p ${q(dir + '/albums')} 2>/dev/null`);
+  return r.stdout.split('\n').map((x) => x.trim()).filter((x) => x.endsWith('/')).map((x) => x.slice(0, -1))
+    .filter((x) => ALBUM_RE.test(x)).sort((a, b) => a.localeCompare(b));
+}
+// The TV's config.json is the source of truth: the phone app edits it too.
+async function readTvConfig() {
+  const dir = await screensaverDir();
+  const r = await sh(`cat ${q(dir + '/config.json')} 2>/dev/null`);
+  try { const j = JSON.parse(r.stdout); return j && typeof j === 'object' ? j : null; } catch { return null; }
+}
+async function listScreensaverFiles(album = '') {
+  const dir = await albumDir(album);
   const r = await sh(`ls -1 ${q(dir)} 2>/dev/null`);
   return r.stdout.split('\n').map((x) => x.trim()).filter((x) => MEDIA_EXT.test(x)).map((name) => ({
     name,
@@ -284,12 +316,17 @@ const routes = {
   'GET /api/discover': async () => ({ subnets: localSubnets(), found: await discover() }),
 
   'POST /api/connect': async (body) => {
+    userDisconnected = false;
     let address = String(body.address || '').trim();
     if (!/^[A-Za-z0-9.-]+(:\d{2,5})?$/.test(address)) throw httpError(400, 'Enter the TV IP address, e.g. 192.168.1.40');
     if (!address.includes(':')) address += ':5555';
     const r = await run(['connect', address], 12000);
     const out = (r.stdout + r.stderr).trim();
     if (/cannot|failed|refused|unable|no route|timed out/i.test(out)) {
+      // The TV is on (its remote/Cast ports answer) but adb isn't listening: usually after a restart.
+      const host = address.split(':')[0];
+      const on = (await Promise.all(TV_SERVICE_PORTS.map((p) => probe(host, p, 1500)))).some(Boolean);
+      if (on) throw httpError(502, ADB_OFF_MESSAGE);
       throw httpError(502, `Could not reach the TV at ${address}. Check that it is on, on the same Wi-Fi, and USB debugging is enabled. (adb: ${out})`);
     }
     serial = address;
@@ -316,6 +353,7 @@ const routes = {
   'POST /api/disconnect': async () => {
     if (serial) await run(['disconnect', serial], 5000);
     serial = null;
+    userDisconnected = true; // don't reconnect by ourselves until the user connects again
     return { ok: true };
   },
 
@@ -351,18 +389,58 @@ const routes = {
 
   'GET /api/current': async () => ({ app: await currentApp() }),
 
-  'GET /api/screensaver/status': async () => {
+  // The TV's volume (media stream): { level, max, muted }.
+  'GET /api/volume': async () => {
+    const out = (await sh("dumpsys audio | grep -A7 '^- STREAM_MUSIC'")).stdout;
+    const level = Number((out.match(/streamVolume:\s*(\d+)/) || [])[1]);
+    const max = Number((out.match(/Max:\s*(\d+)/) || [])[1]);
+    if (!Number.isFinite(level) || !(max > 0)) return { level: null, max: null, muted: null };
+    return { level, max, muted: /Muted:\s*true/.test(out) };
+  },
+
+  // Open a web link on the TV (YouTube, Netflix… links open in their apps).
+  'POST /api/open': async (body) => {
+    const url = String(body.url || '').trim();
+    if (!/^https?:\/\/[^\s'"<>]+$/.test(url)) throw httpError(400, 'That isn\'t a web link. Links start with https://');
+    const r = await sh(`am start -a android.intent.action.VIEW -d ${q(url)}`);
+    if (/Error|unable to resolve/i.test(r.stdout + r.stderr)) throw httpError(400, 'The TV has no app that can open this link.');
+    return { ok: true };
+  },
+
+  // Sleep timer. It runs on the TV, so the laptop can be closed. The file holds "pid seconds".
+  'POST /api/sleep': async (body) => {
+    const P = '/data/local/tmp/connecttv-sleep.pid';
+    await sh(`[ -f ${P} ] && kill $(cut -d" " -f1 ${P}) 2>/dev/null; rm -f ${P}`);
+    const minutes = Math.round(Number(body.minutes) || 0);
+    if (minutes <= 0) return { ok: true, secondsLeft: null };
+    const secs = Math.min(Math.max(minutes, 1), 600) * 60;
+    await sh(`nohup sh -c 'echo $$ ${secs} > ${P}; sleep ${secs}; rm -f ${P}; input keyevent KEYCODE_SLEEP' >/dev/null 2>&1 &`);
+    return { ok: true, secondsLeft: secs };
+  },
+  'GET /api/sleep': async () => {
+    const P = '/data/local/tmp/connecttv-sleep.pid';
+    const r = await sh(`[ -f ${P} ] && kill -0 $(cut -d" " -f1 ${P}) 2>/dev/null && echo $(cut -d" " -f2 ${P}) $(stat -c %Y ${P}) $(date +%s)`);
+    const n = r.stdout.trim().split(/\s+/).map(Number);
+    const left = n.length === 3 && n.every(Number.isFinite) ? n[0] + n[1] - n[2] : 0;
+    return { secondsLeft: left > 0 ? left : null };
+  },
+
+  'GET /api/screensaver/status': async (_b, url) => {
+    const album = albumName(url.searchParams.get('album'));
     const installed = await isInstalled(SS_PKG);
     const comp = (await sh('settings get secure screensaver_components')).stdout.trim();
     const enabled = (await sh('settings get secure screensaver_enabled')).stdout.trim();
     const timeoutMs = Number((await sh('settings get system screen_off_timeout')).stdout.trim()) || null;
-    const files = installed ? await listScreensaverFiles() : [];
+    const files = installed ? await listScreensaverFiles(album) : [];
+    const albums = installed ? await listAlbums() : [];
+    const tvConfig = installed ? await readTvConfig() : null;
     const tv = currentTv();
     return {
+      album, albums,
       installed, apkBuilt: fs.existsSync(APK),
       active: comp.includes(SS_PKG), components: comp, enabled,
       timeoutMin: timeoutMs ? Math.round(timeoutMs / 60000) : null,
-      files, config: { ...DEFAULT_CONFIG, ...(tv?.screensaverConfig || {}) },
+      files, config: { ...DEFAULT_CONFIG, ...(tvConfig || tv?.screensaverConfig || {}) },
     };
   },
 
@@ -377,24 +455,59 @@ const routes = {
     await new Promise((r2) => setTimeout(r2, 1500));
     await sh('input keyevent KEYCODE_HOME');
     const tv = currentTv();
-    await pushConfig({ ...DEFAULT_CONFIG, ...(tv?.screensaverConfig || {}) });
+    // Keep the settings already on the TV (e.g. after a reinstall).
+    await pushConfig({ ...DEFAULT_CONFIG, ...(tv?.screensaverConfig || {}), ...((await readTvConfig()) || {}) });
     return { ok: true };
   },
 
+  // Change only the keys that were sent; everything else on the TV stays as it is.
   'POST /api/screensaver/config': async (body) => {
-    const cfg = {
-      intervalSec: Math.min(600, Math.max(3, Number(body.intervalSec) || DEFAULT_CONFIG.intervalSec)),
-      shuffle: !!body.shuffle, showClock: !!body.showClock, motion: !!body.motion, muteVideo: body.muteVideo !== false,
-      fit: body.fit === 'contain' ? 'contain' : 'cover',
-    };
+    const tv = currentTv();
+    const cfg = { ...DEFAULT_CONFIG, ...(tv?.screensaverConfig || {}), ...((await readTvConfig()) || {}) };
+    const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+    if (has('intervalSec')) cfg.intervalSec = Math.min(600, Math.max(3, Number(body.intervalSec) || DEFAULT_CONFIG.intervalSec));
+    for (const k of ['shuffle', 'showClock', 'motion', 'muteVideo', 'showDate', 'onThisDay']) if (has(k)) cfg[k] = !!body[k];
+    if (has('fit')) cfg.fit = body.fit === 'contain' ? 'contain' : 'cover';
+    if (has('transition')) cfg.transition = ['fade', 'slide', 'none'].includes(body.transition) ? body.transition : 'fade';
+    if (has('album')) cfg.album = albumName(body.album);
+    if (has('schedule')) {
+      const mmdd = (v) => (typeof v === 'string' && /^\d{2}-\d{2}$/.test(v) ? v : undefined);
+      const min = (v) => (Number.isInteger(v) && v >= 0 && v < 1440 ? v : undefined);
+      cfg.schedule = (Array.isArray(body.schedule) ? body.schedule : []).slice(0, 50).map((r) => ({
+        album: albumName(r && r.album), from: mmdd(r && r.from), to: mmdd(r && r.to), fromMin: min(r && r.fromMin), toMin: min(r && r.toMin),
+      }));
+    }
+    if (has('soundOn')) cfg.soundOn = (Array.isArray(body.soundOn) ? body.soundOn : []).filter((x) => typeof x === 'string').slice(0, 1000);
+    if (has('captions')) {
+      cfg.captions = {};
+      for (const [k, v] of Object.entries(body.captions || {})) if (typeof v === 'string' && v.trim()) cfg.captions[k] = v.slice(0, 200);
+    }
+    if (has('weather')) {
+      const w = body.weather;
+      cfg.weather = w && Number.isFinite(w.lat) && Number.isFinite(w.lon)
+        ? { lat: w.lat, lon: w.lon, place: String(w.place || '').slice(0, 100), unit: w.unit === 'f' ? 'f' : 'c' } : null;
+    }
     await pushConfig(cfg);
     upsertTv(needDevice(), { screensaverConfig: cfg });
     return { ok: true, config: cfg };
   },
 
+  'POST /api/screensaver/album': async (body) => {
+    const name = albumName(body.name);
+    if (!name) throw httpError(400, 'Give the album a name.');
+    await sh(`mkdir -p ${q(await albumDir(name))}`);
+    return { ok: true, name };
+  },
+  'DELETE /api/screensaver/album': async (_b, url) => {
+    const name = albumName(url.searchParams.get('name'));
+    if (!name) throw httpError(400, 'The Main album can\'t be deleted.');
+    await sh(`rm -rf ${q(await albumDir(name))}`);
+    return { ok: true };
+  },
+
   'DELETE /api/screensaver/file': async (_b, url) => {
     const name = safeName(url.searchParams.get('name'));
-    const dir = await screensaverDir();
+    const dir = await albumDir(albumName(url.searchParams.get('album')));
     await sh(`rm -f ${q(dir + '/' + name)}`);
     return { ok: true };
   },
@@ -429,8 +542,21 @@ const routes = {
   },
 };
 
+// A PNG of what's on the TV screen. Streaming apps (Netflix, Prime Video) block this.
+function handleScreenshot(res) {
+  const s = needDevice();
+  execFile(ADB, ['-s', s, 'exec-out', 'screencap -p'], { encoding: 'buffer', timeout: 20000, maxBuffer: 64 * 1024 * 1024 }, (err, png) => {
+    if (err || !png || png.length < 8 || png[0] !== 0x89) {
+      return send(res, 502, { error: 'The TV didn\'t allow a picture of this screen. Streaming apps like Netflix and Prime Video block screenshots. Try it on the home screen.' });
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store', 'Content-Length': png.length });
+    res.end(png);
+  });
+}
+
 async function handleUpload(req, res, url) {
   const name = safeName(url.searchParams.get('name'));
+  const album = albumName(url.searchParams.get('album'));
   needDevice();
   if (!(await isInstalled(SS_PKG))) throw httpError(409, 'Install the screensaver app on the TV first.');
   const local = path.join(MEDIA, name);
@@ -441,7 +567,8 @@ async function handleUpload(req, res, url) {
     out.on('error', reject);
     req.on('error', reject);
   });
-  const dir = await screensaverDir();
+  const dir = await albumDir(album);
+  if (album) await sh(`mkdir -p ${q(dir)}`);
   const r = await run(['-s', serial, 'push', local, `${dir}/${name}`], 600000);
   if (r.code !== 0) throw httpError(500, 'Upload to TV failed: ' + (r.stderr || r.stdout));
   send(res, 200, { ok: true, name });
@@ -451,6 +578,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
     if (url.pathname === '/api/screensaver/upload' && req.method === 'POST') return await handleUpload(req, res, url);
+    if (url.pathname === '/api/screenshot' && req.method === 'GET') return handleScreenshot(res);
     const handler = routes[`${req.method} ${url.pathname}`];
     if (handler) {
       const body = req.method === 'POST' ? await readJson(req) : {};
@@ -470,7 +598,37 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// ---------- auto-reconnect ----------
+// On start, reconnect to the TV used last; afterwards, reconnect whenever it comes back
+// (e.g. after standby). Quiet: failures just wait for the next try.
+let userDisconnected = false;
+let reconnecting = false;
+async function autoReconnect() {
+  if (!ADB || reconnecting || userDisconnected) return;
+  reconnecting = true;
+  try {
+    let address = serial;
+    if (!address) {
+      const last = loadTvs().filter((t) => t.lastConnected).sort((a, b) => b.lastConnected.localeCompare(a.lastConnected))[0];
+      address = last && last.address;
+    }
+    if (!address) return;
+    if ((await deviceState(address)) === 'device') { serial = address; return; }
+    const host = address.split(':')[0];
+    if (!(await probe(host, 5555, 1500))) return; // TV off or in standby
+    await run(['connect', address], 8000);
+    if ((await deviceState(address)) === 'device') {
+      serial = address;
+      console.log(`  🔄  Reconnected to ${address}`);
+    }
+  } catch { /* try again later */ } finally {
+    reconnecting = false;
+  }
+}
+
 server.listen(PORT, HOST, () => {
+  autoReconnect();
+  setInterval(autoReconnect, 20000);
   console.log(`\n  📺  Connect TV is running → http://localhost:${PORT}\n`);
   console.log(ADB ? `  adb: ${ADB}` : '  ⚠️  adb not found. Install Android platform-tools or set ADB=/path/to/adb');
   console.log(fs.existsSync(APK) ? '  screensaver app: built' : '  screensaver app: not built yet (run ./tv-screensaver/build.sh)');

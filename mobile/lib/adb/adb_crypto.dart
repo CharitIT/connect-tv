@@ -58,10 +58,19 @@ class AdbKey {
   static final Uint8List _sha1DigestInfo =
       Uint8List.fromList([0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14]);
 
+  static final Uint8List _sha256DigestInfo = Uint8List.fromList([
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20
+  ]);
+
   /// Sign the TV's auth token exactly like OpenSSL's RSA_sign(NID_sha1, token).
-  Uint8List signToken(Uint8List token) {
+  Uint8List signToken(Uint8List token) => _pkcs1Sign(Uint8List.fromList([..._sha1DigestInfo, ...token]));
+
+  /// SHA256withRSA (PKCS#1 v1.5) signature of [data], used for the remote-control certificate.
+  Uint8List signSha256(Uint8List data) =>
+      _pkcs1Sign(Uint8List.fromList([..._sha256DigestInfo, ...SHA256Digest().process(data)]));
+
+  Uint8List _pkcs1Sign(Uint8List t) {
     const k = bits ~/ 8;
-    final t = Uint8List.fromList([..._sha1DigestInfo, ...token]);
     final em = Uint8List(k);
     em[0] = 0x00;
     em[1] = 0x01;
@@ -124,6 +133,11 @@ class AdbKey {
   }
 
   // ---------- helpers ----------
+
+  /// Private-key parts needed for a PKCS#1 key file.
+  BigInt get dp => d % (p - BigInt.one);
+  BigInt get dq => d % (q - BigInt.one);
+  BigInt get qInv => q.modInverse(p);
 
   static BigInt _toBigInt(Uint8List bytes) {
     var r = BigInt.zero;

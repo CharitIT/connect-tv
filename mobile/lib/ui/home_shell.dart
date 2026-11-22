@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../tv/tv_service.dart';
 
 import 'apps_tab.dart';
 import 'common.dart';
@@ -15,6 +18,34 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
+
+  /// Links shared to the app from Android's Share menu.
+  static const _share = MethodChannel('connecttv/share');
+
+  @override
+  void initState() {
+    super.initState();
+    _share.setMethodCallHandler((call) async {
+      if (call.method == 'shared') await _takeShared();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _takeShared());
+  }
+
+  Future<void> _takeShared() async {
+    String? text;
+    try {
+      text = await _share.invokeMethod<String>('takeShared');
+    } on MissingPluginException {
+      return; // iPhone: no share hook (yet)
+    } on PlatformException {
+      return;
+    }
+    final link = findLink(text ?? '');
+    if (link == null || !mounted) return;
+    final app = AppScope.read(context);
+    if (!app.connected) await app.autoConnect();
+    if (mounted) await openLinkDialog(context, initial: link);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,8 +64,8 @@ class _HomeShellState extends State<HomeShell> {
           ? const NotConnected()
           : switch (_tab) {
               0 => const RemoteTab(),
-              1 => const AppsTab(),
-              2 => const ScreensaverTab(),
+              1 => AppsTab(key: ValueKey(app.adbConnected)),
+              2 => ScreensaverTab(key: ValueKey(app.adbConnected)),
               _ => const SettingsTab(),
             },
       bottomNavigationBar: NavigationBar(

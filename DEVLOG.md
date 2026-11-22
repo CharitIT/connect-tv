@@ -5,6 +5,99 @@ Planned work lives in [ROADMAP.md](ROADMAP.md); this file records what actually 
 
 ---
 
+## 2026-11-22: Auto-reconnect, favourite apps, volume slider, On this day
+
+### Changed
+- **Auto-reconnect**:
+  - Phone app: while it's open, a check every 8 s (`tvLooksOn`, a quick port probe) reconnects as soon as the TV is back from standby. If only the remote came back, it retries Developer mode at most once a minute, and only if Developer mode had worked before (no surprise Allow prompt). Settings → Disconnect stops this until the user connects again.
+  - Server: on start it reconnects to the TV used last (newest `lastConnected` in `data/tvs.json`), then retries every 20 s. "Disconnect" stops it.
+- **Favourite apps**: a row of coloured app buttons on the Remote tab, plus Edit to choose and reorder them (from the TV's app list with Developer mode, otherwise the known apps). Stored in `SavedTv.favourites` (null = `defaultChannels`). The Apps tab's Quick switch uses the same list.
+- **Volume slider**: Android 11 has no "set volume to N" command (`media` and `cmd media_session volume` aren't available). The slider presses volume up/down the needed number of times, then checks, up to 3 passes, stopping if a press moves more than one step. Developer mode sends all the presses in one `input keyevent K K K…` (the TV's `input` help confirms several keys are allowed).
+- **On this day** (`onThisDay`, `dates` config keys):
+  - The TV reads each photo's EXIF date with `android.media.ExifInterface` (cached), or uses `dates` sent by the phone. On days when photos from earlier years match today's month and day, it plays those from every album, captioned "N years ago today".
+  - Album sync sends each item's taken date (`createDateTime`) into `dates`, so converted HEIC photos without EXIF still work, and clears entries for removed items.
+  - Settings switch on the phone and a checkbox on the web page.
+
+### Tested
+- ✅ Server restart **without clicking Connect**: it reconnected to the TV by itself. Config with `onThisDay` keeps `intervalSec: 5`.
+- ✅ Analyze clean, 14 tests pass (new: favourites and On this day dates survive saving). Screensaver APK rebuilt and bundled. Both phones updated.
+- ⛔ Pressing a no-op key on the TV to check multi-key `input keyevent` was blocked (asking first is the rule). The `input` help text confirms it's supported.
+- ⏳ For the owner: the slider, the favourites row, and On this day (needs the screensaver reinstalled on the TV).
+
+---
+
+## 2026-11-22: Show the TV volume
+
+### Changed
+- The owner couldn't see the volume level on the phone. The Remote tab now shows "Volume 14" on the volume button, plus a bar with "14 / 100" (or "Muted").
+- Sources of the volume reading:
+  - **Remote link**: the TV sends `RemoteSetVolumeLevel` (field 50: 6 = max, 7 = level, 8 = muted) whenever the volume changes.
+  - **Developer mode**: `dumpsys audio` STREAM_MUSIC `streamVolume` and `Max`, read about 350 ms after a volume key and when the Remote tab opens.
+- Server: new `GET /api/volume`. The web page shows "Volume N / max" after the volume keys.
+
+### Remove several photos at once
+- The owner asked to delete photos already on the screensaver. Single removal was hidden behind tapping a photo, so the Screensaver tab now has **Select** (or press and hold a photo).
+  - Tap photos to tick them, use **All/None**, then **Remove**, and confirm.
+  - Removing a photo also clears its caption and sound setting. The phone copies are kept.
+- A removed photo that came from a synced phone album isn't sent again: the sync still treats it as already sent.
+
+### Tested
+- ✅ The TCL reports STREAM_MUSIC 14/100, not muted. `GET /api/volume` returns `{"level":14,"max":100,"muted":false}`.
+- ✅ Analyze clean, 13 tests pass. Installed on the iPhone; the Samsung wasn't on USB.
+- ⏳ The volume messages over the remote link (field numbers taken from the public protocol description) haven't been seen live yet. The Developer-mode reading covers it if they differ.
+
+---
+
+## 2026-11-21: Screensaver albums, schedules, overlays, transitions (#12, #14, #15)
+
+### Changed
+- **TV app (`Slideshow.java`)**:
+  - Albums: the screensaver folder is the Main album, and the others are `albums/<name>/`. The active album comes from the first matching `schedule` rule (a date range like `MM-DD`, a time range in minutes, or both; ranges can wrap past New Year or midnight), otherwise from `album`. It is re-checked before every photo, and an empty album falls back to Main.
+  - Transitions: fade, slide (the new photo pushes the old one off; the zoom starts after it arrives), or cut.
+  - Per-video sound (`soundOn`), a date line and per-photo captions (`captions`).
+  - Weather from Open-Meteo every 30 min. This needs the INTERNET permission; without internet the weather is simply left out.
+- **Phone app**:
+  - `ScreensaverConfig` covers every key and keeps unknown keys. The Screensaver tab reads the TV's `config.json` as the source of truth.
+  - UI: album picker, new/delete album, a sheet per photo (caption, sound, remove), transition, date, and a weather town search (Open-Meteo geocoding, run from the phone).
+  - New "Which album plays" page with a schedule editor that can be reordered.
+  - Reinstalling the screensaver keeps the TV's settings.
+- **Server and web**:
+  - The config route now reads the TV's `config.json` and changes only the keys it's sent. Before, the laptop and the phone overwrote each other's settings.
+  - New album routes, plus `album` on status, upload and delete. The web page has an album picker, new/delete album, transition, date and the album that plays.
+
+### Tested
+- ✅ `dart analyze` clean, 12 tests pass (new: settings round-trip with unknown keys, album names and paths). The TV app builds.
+- ✅ The schedule range logic, run with Java: Diwali dates, New Year wrap-around, and a night window.
+- ✅ Server against the real TV (nothing visible): status lists albums and reads the TV config; saving with nothing changed keeps the existing `intervalSec: 5`; a test album was created, listed and deleted; bad album names and deleting Main are refused.
+- ✅ Both phones updated.
+- ⏳ The screensaver app on the TV is still the old version. Reinstalling it shows the preview for about 2 seconds and then goes Home, so it waits until the owner is ready.
+
+### Phone album sync (#13)
+- The owner approved the **`photo_manager`** package (added to AGENTS.md).
+- `lib/sync/album_sync.dart` + `ui/sync_page.dart`:
+  - Link a phone album to a TV album. This covers Google Photos and iCloud albums that are on the phone.
+  - Each sync sends new items (up to 150 per run) and removes items deleted from the phone album. A map from asset ID to TV file name is stored in `SavedTv.syncs`.
+  - Photos: JPEG/PNG/WEBP up to 12 MB are sent as they are. Others (HEIC, very large) become a 4K JPEG using "fit" mode, so nothing is cropped. Videos up to 500 MB are sent as they are.
+  - It runs on "Sync now", and quietly after Developer mode connects, but only if photo access was already given, so no prompt pops up by surprise.
+- Android: added the READ_MEDIA_IMAGES/VIDEO/VISUAL_USER_SELECTED permissions (and READ_EXTERNAL_STORAGE for SDK 32 and below). iOS already had the Photos usage text.
+- ✅ Analyze clean, 13 tests pass (new: sync links survive saving). Installed on both phones. ⏳ The owner still needs to test a real album sync.
+
+### Fix: album sync "not working"
+- On the TV, no album folder had even been created, so the sync stopped on the phone.
+- On the Samsung (`dumpsys package`), photo access had been given as **"limited" (selected photos only)**. The app then sees only the picked photos and never new ones.
+- Three silent failures could look like "nothing happens":
+  1. the sync quietly did nothing when Developer mode wasn't connected;
+  2. the album picker could open empty with no message;
+  3. errors from the automatic sync were never shown.
+- Fixes:
+  - The sync page now shows a card for each case: limited access, with **Open Settings** (and it re-checks when you come back); Developer mode not connected, with a Connect button; and the last sync error.
+  - A skipped item now gives the reason.
+
+### Open issues / next
+- Background sync while the app is closed would need another package (ask first).
+
+---
+
 ## 2026-11-21: Installed the phone app on real phones
 
 ### Changed
@@ -17,6 +110,48 @@ Planned work lives in [ROADMAP.md](ROADMAP.md); this file records what actually 
 - Reinstalling on the iPhone with `flutter install` uninstalls first, which wipes the app's saved TV, setup progress and key. The TV asks "Allow" again after that.
 - The APK is Android only. iPhones must be installed from Xcode/Flutter on the Mac.
 - With the TV not connected to the Mac's adb, `adb devices` lists only the phone. Always pass `-s <serial>` once both are attached.
+
+### Remote features: touchpad, voice, screen, links, timers (#4, #6, #8, #10, #11)
+- **#4 Touchpad**: the Remote tab can switch between Buttons and Touchpad. Every 40 px of swipe sends one arrow key, and a quick tap sends OK. An `EagerGestureRecognizer` stops the page from scrolling while you swipe.
+- **#6 Voice / typing**: the text box tells you to use the keyboard's 🎤 (no speech package needed). Without Developer mode, text is sent as key presses over the remote link (`charKeyCode`): lower-case letters, digits and common symbols.
+- **#8 TV screen**: `ScreenPage` shows `exec:screencap -p` (new `AdbClient.execBytes`) every 3 s, with pause and pinch-to-zoom. On this TCL, `screencap` produces an **empty file while Netflix is playing**, because DRM blocks it. The app shows a plain message instead. Works on the home screen (tested by the owner).
+- **#10 Links**: `openUrl` goes over the remote link (app link) or ADB (`am start -a VIEW`). Android: "Share → Connect TV" (a `SEND text/plain` intent filter plus a `MethodChannel` in `MainActivity.kt`) opens a confirm dialog. Both platforms: an "Open a link" button that pre-fills a link from the clipboard. iPhone Share-sheet support would need an app extension; it's on the roadmap.
+- **#11 Timers**:
+  - The **sleep timer** runs on the TV with Developer mode: `nohup sh -c 'echo $$ secs > pid; sleep …; input keyevent KEYCODE_SLEEP' &`. The app reads the time left back from the file's mtime. Without Developer mode the timer runs in the app.
+  - **App bedtime** is a script pushed to `/data/local/tmp`. Every 20 s during the set hours, if a chosen app is on top, it presses HOME. The app restarts the script on connect if the TV restarted.
+- **Server/web parity**: `POST /api/open`, `GET /api/screenshot`, and `POST`/`GET /api/sleep`, plus a link box, a sleep-timer menu and a "See TV screen" button on the web Remote tab.
+- Safe live checks on the TV (Netflix was playing, so nothing visible was done):
+  - a background `nohup` task survives an ADB disconnect;
+  - mksh `$((10#$h*60+10#$m))` works;
+  - the sleep timer starts, reads back and cancels (600 min, then cancelled);
+  - the bedtime script runs and sees the top app (only a made-up app was blocked);
+  - the server's open route rejects bad links;
+  - the screenshot route reports the Netflix block.
+- ✅ `dart analyze` clean, 10 tests pass (new: key codes, link finding and checking, bedtime settings). Installed on both phones.
+- ✅ The owner tested these on the real TV and phones: the touchpad, Share → Connect TV on the Samsung, the screen preview on the home screen, and the sleep timer.
+
+### No Developer mode needed for the remote (#2)
+- New `mobile/lib/atv/`: the **Android TV Remote protocol v2**, the one Google's TV remote app uses. The TV listens on 6466/6467 even without Developer mode.
+  - `atv_cert.dart`: a self-signed X.509 client certificate (SHA256withRSA) and a PKCS#1 key, built from the phone's existing RSA key with a small DER encoder. It also reads the RSA key out of the TV's certificate. Checked with `openssl verify` and `openssl rsa -check`.
+  - `atv_remote.dart`: pairing (port 6467): request → options (6-char hex) → configuration → the TV shows a code → secret = SHA-256(client n, e, TV n, e, code[2:]), where the code's first byte is a checksum. Remote (port 6466): configure / set-active handshake, ping replies, key inject (short and long press), app links (`market://launch?id=<pkg>`), and the on-screen app and power state. Protobuf is encoded by hand.
+- `AppState` keeps both links. When the phone is paired, the remote connects first and ADB connects in the background. Keys use the remote link, falling back to ADB; launching apps prefers ADB, falling back to an app link. The screensaver, typing and the full app list need ADB.
+- UI changes:
+  - The setup guide now goes: brand → **find TV + pair with a code** → Developer mode (optional, "Skip for now") → screensaver → done.
+  - Settings shows both connections, with "Pair as remote" and "Developer mode" actions.
+  - The Screensaver tab shows the Developer-mode steps when only the remote is connected.
+  - The Apps tab shows quick-switch tiles plus a hint.
+- Wi-Fi discovery now finds TVs on port 6466 or 5555.
+
+### Clear message when ADB is off (#1)
+- If the connect to 5555 fails but the TV answers on 6466/6467/8008/8009, both `server.js` and `adb_client.dart` now say the TV is on and tell the user to turn USB debugging off and on. Tested by simulating it (a listener on 6466 with 5555 closed): both show the new message.
+
+### Tested
+- ✅ `dart analyze` clean. 7 tests pass: new certificate tests, plus the setup-guide test, which caught a real bug (the pairing panel looked up app state in `dispose()`).
+- ✅ `tool/atv_live_test.dart check` against the real TV: the TLS connection to 6466 works, and the TV correctly reports a new identity as not paired. Nothing showed on the TV.
+- ✅ Pairing with a code on the real TV works. The owner confirmed that pairing, the remote and app switching all work. The updated build is installed on both the iPhone and the Samsung.
+
+### Other
+- A separate Python program on this Mac also listens on port 8765 (all interfaces), so `localhost:8765` can reach it instead of the Connect TV server. Use `127.0.0.1:8765`.
 
 ### Privacy cleanup before publishing
 - Removed AI-tool names and personal details (TV IP and model, phone names and serials, Apple team ID) from the tracked docs and code.

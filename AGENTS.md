@@ -15,7 +15,7 @@ a remote control, app switching (Netflix, Prime Video, YouTube, …), and a cust
 | Web UI | `web/index.html` | One self-contained file (HTML + CSS + vanilla JS). No framework, no build step. |
 | Device data | `devices.json` | Setup steps per brand (`profiles`), known app names and colours (`apps`), quick-switch list (`defaultChannels`). |
 | TV app | `tv-screensaver/` | Android screensaver (`DreamService`) in plain Java with no Gradle. Package `com.connecttv.screensaver`. |
-| Phone app | `mobile/` | Flutter app (Android + iOS) that talks to the TV **directly**, with its own Dart ADB client in `mobile/lib/adb/`. `mobile/lib/tv/tv_service.dart` mirrors `server.js`. See `mobile/README.md`. |
+| Phone app | `mobile/` | Flutter app (Android + iOS) that talks to the TV **directly**: the Android TV Remote protocol (`mobile/lib/atv/`, pairing code, no Developer mode) for keys and apps, and its own Dart ADB client (`mobile/lib/adb/`) for the screensaver. `mobile/lib/tv/tv_service.dart` mirrors `server.js`. See `mobile/README.md`. |
 | Local data | `data/` | `tvs.json` (saved TVs) and `media/` (uploaded photos). **Git-ignored; never commit.** |
 
 ## Commands
@@ -32,13 +32,17 @@ dart analyze && flutter test        # must pass before committing phone app chan
 flutter build apk --release         # Android APK
 flutter build ios --debug --no-codesign   # iOS compile check (the simulator build is broken by Xcode 27 setup)
 dart run tool/adb_live_test.dart <tv-ip>        # live test of the Dart ADB client (TV shows an Allow prompt for a new key)
+dart run tool/atv_live_test.dart check <tv-ip>  # remote protocol: silent check (pair = TV shows a code; key = presses a key)
 ```
 
 ### Phone app rules
-- The Flutter app's dependencies were approved by the owner: `pointycastle`, `shared_preferences`, `image_picker`, `path_provider`. Ask before adding more.
+- The Flutter app's dependencies were approved by the owner: `pointycastle`, `shared_preferences`, `image_picker`, `path_provider`, `photo_manager` (album sync, approved 2026-11-21). Ask before adding more.
 - When you change TV behaviour, change **both** `server.js` and `mobile/lib/tv/tv_service.dart`.
 - After changing `devices.json` or the screensaver Java code, run `mobile/tool/sync_assets.sh`.
-- `mobile/lib/adb/` is pure Dart (no Flutter imports), so it can be run from the command line.
+- `mobile/lib/adb/` and `mobile/lib/atv/` are pure Dart (no Flutter imports), so they can be run from the command line.
+- The remote-protocol link exists only in the phone app. The laptop server uses ADB only.
+- App bedtime (`AppLimits`, a script in `/data/local/tmp` on the TV) is phone-app only. The sleep timer, open-link and screenshot features exist in both.
+- TV-side background tasks are started with `nohup … &` from an ADB shell. They survive disconnects but not a TV restart.
 
 - `build.sh` needs the Android SDK (`~/Library/Android/sdk` or `$ANDROID_HOME`) and a JDK. It uses `$JAVA_HOME`, then Android Studio's bundled JBR. `java` is **not** on the PATH on the owner's Mac.
 - `adb`: `~/Library/Android/sdk/platform-tools/adb` (or set `ADB=`).
@@ -49,7 +53,9 @@ dart run tool/adb_live_test.dart <tv-ip>        # live test of the Dart ADB clie
 - Every TV command goes through `run()` / `sh()` in `server.js`. **Always quote user input with `q()`** before putting it into a remote shell command, and validate it with a regex (see the existing routes).
 - Screensaver media and `config.json` are pushed to `/sdcard/Android/data/com.connecttv.screensaver/files/screensaver/`. The fallback is `/sdcard/Pictures/TVScreensaver`. The Java `Slideshow` reads both.
 - The screensaver is activated with `settings put secure screensaver_components com.connecttv.screensaver/.PhotoDream`. The previous value is saved in `data/tvs.json` for **Restore**.
-- Config keys shared by the server and the app: `intervalSec, shuffle, showClock, fit ("cover"|"contain"), motion, muteVideo`. If you add one, update `DEFAULT_CONFIG` and the `/api/screensaver/config` route in `server.js`, the settings form in `web/index.html`, and `Slideshow.loadConfig()`.
+- Config keys (`config.json` on the TV): `intervalSec, shuffle, showClock, fit ("cover"|"contain"), motion, muteVideo, showDate, transition ("fade"|"slide"|"none"), album, schedule [{album, from "MM-DD", to, fromMin, toMin}], soundOn [paths], captions {path: text}, weather {lat, lon, place, unit}, onThisDay, dates {path: "YYYY-MM-DD"}`. Paths are relative to the screensaver folder (`photo.jpg`, `albums/Family/photo.jpg`).
+- **The TV's `config.json` is the source of truth.** The server and the phone app both read it, change only what they edit, and write it back. Unknown keys must be kept. If you add a key, update `DEFAULT_CONFIG` and the `/api/screensaver/config` route in `server.js`, `ScreensaverConfig` in `tv_service.dart`, `Slideshow.loadConfig()`, and the settings UI (phone; web if it's simple).
+- Albums: files in the screensaver folder are the **Main** album; other albums are `albums/<name>/` (name matches `^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$`). The TV picks the album from the first matching `schedule` rule, otherwise `album`, and falls back to Main if that album is empty.
 
 ### API (all JSON; POST bodies are JSON)
 `GET /api/state` · `GET /api/profiles` · `GET /api/discover` · `POST /api/connect {address}` · `POST /api/pair {address, code}` ·
@@ -57,7 +63,9 @@ dart run tool/adb_live_test.dart <tv-ip>        # live test of the Dart ADB clie
 `GET /api/apps` · `POST /api/launch {pkg}` · `GET /api/current` ·
 `GET /api/screensaver/status` · `POST /api/screensaver/install` · `POST /api/screensaver/config` ·
 `POST /api/screensaver/upload?name=` (raw file body) · `DELETE /api/screensaver/file?name=` ·
-`POST /api/screensaver/activate {timeoutMin}` · `POST /api/screensaver/restore` · `POST /api/screensaver/preview`
+`POST /api/screensaver/activate {timeoutMin}` · `POST /api/screensaver/restore` · `POST /api/screensaver/preview` ·
+`POST /api/open {url}` · `GET /api/screenshot` (PNG) · `POST /api/sleep {minutes}` (0 = cancel) · `GET /api/sleep` ·
+`GET /api/volume` · `GET /api/screensaver/status?album=` · `POST /api/screensaver/album {name}` · `DELETE /api/screensaver/album?name=` · upload and file DELETE also take `&album=`
 
 ## Conventions
 

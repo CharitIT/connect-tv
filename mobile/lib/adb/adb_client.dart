@@ -34,6 +34,28 @@ class AdbException implements Exception {
   String toString() => message;
 }
 
+/// Shown when the TV is on but its debugging port is closed. This often happens after a
+/// restart: the setting still says "on" but the TV stopped listening.
+const adbOffMessage = 'Your TV is on, but it isn\'t accepting connections for the screensaver and app list right now. '
+    'This usually happens after the TV restarts. On the TV, open Settings → System → Developer options, '
+    'turn USB debugging off and then on again, then tap Reconnect.';
+
+/// Ports an Android/Google TV answers on even without Developer mode:
+/// the Android TV Remote service (6466, 6467) and Google Cast (8008, 8009).
+const tvServicePorts = [6466, 6467, 8009, 8008];
+
+/// True if something at [host] answers on a TV service port, i.e. the TV is on and reachable.
+Future<bool> tvLooksOn(String host, {Duration timeout = const Duration(milliseconds: 1500)}) async {
+  final probes = [
+    for (final port in tvServicePorts)
+      Socket.connect(host, port, timeout: timeout).then((s) {
+        s.destroy();
+        return true;
+      }, onError: (_) => false),
+  ];
+  return (await Future.wait(probes)).any((ok) => ok);
+}
+
 class _Message {
   final int command, arg0, arg1;
   final Uint8List data;
@@ -80,6 +102,7 @@ class AdbClient {
     try {
       socket = await Socket.connect(host, port, timeout: connectTimeout);
     } on SocketException catch (e) {
+      if (await tvLooksOn(host)) throw AdbException(adbOffMessage);
       throw AdbException('Could not reach the TV at $host. '
           'Make sure it is on, on the same Wi-Fi as this phone, and USB debugging is turned on. (${e.osError?.message ?? e.message})');
     }
@@ -123,6 +146,22 @@ class AdbClient {
       await sub.cancel();
     }
     return utf8.decode(out.takeBytes(), allowMalformed: true);
+  }
+
+  /// Run a command and return its raw output bytes (no text conversion), e.g. a screenshot.
+  Future<Uint8List> execBytes(String command, {Duration timeout = const Duration(seconds: 30)}) async {
+    final s = await open('exec:$command');
+    final out = BytesBuilder(copy: false);
+    final sub = s.data.listen(out.add);
+    try {
+      await s.closed.timeout(timeout);
+    } on TimeoutException {
+      s.close();
+      throw AdbException('The TV took too long to respond.');
+    } finally {
+      await sub.cancel();
+    }
+    return out.takeBytes();
   }
 
   /// Copy bytes to a file on the TV.
