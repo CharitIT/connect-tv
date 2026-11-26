@@ -4,7 +4,8 @@ A Flutter app that controls an Android TV / Google TV **directly from the phone*
 
 - **Setup guide** on first launch: choose your TV brand → find the TV and **pair with a code shown on the TV** → Developer mode (optional, for the screensaver) → set up the screensaver → feature tour.
 - **Remote**: D-pad or **swipe touchpad**, OK, Back, Home, volume, mute, power, playback, and typing or **speaking** (the keyboard's 🎤) into the TV.
-- **More**: see the TV screen live, open a YouTube/Netflix link on the TV (Android: Share → Connect TV), sleep timer, and app bedtime.
+- **More**: see the TV screen live, mirror the phone (Android, via the TV's built-in Chromecast), open a YouTube/Netflix link on the TV (Android: Share → Connect TV), sleep timer, and app bedtime.
+- **Several TVs**: save more than one TV and switch by tapping the TV name at the top (or Settings → Other TVs → Add another TV).
 - **Apps**: quick-switch tiles (Netflix, Prime Video, Disney+, YouTube, …) and every app on the TV.
 - **Screensaver**: install the screensaver app on the TV, add photos and videos into **albums** (or **sync a phone album** so new photos appear on the TV automatically), choose which album plays (with **schedules** by date or time), captions, per-video sound, transitions, date and weather, preview, set it as the screensaver, or restore the original.
 

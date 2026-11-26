@@ -76,7 +76,8 @@ Status as of 2026-11-19: remote control, app switching, and the custom screensav
 - [x] **Auto-reconnect**: reconnect to the last TV on server start, and retry in the background when it comes back online (server every 20 s; phone app every 8 s while open, 2026-11-22).
 - [ ] **Wake the TV**: send Wake-on-LAN, or use the TV's network standby, so Power on works from the laptop.
 - [ ] **No developer mode needed**: use the Android TV Remote protocol (the one the Google TV phone app uses) as an alternative to adb.
-- [ ] **Multiple TVs**: switch between saved TVs, or send the same command to all of them.
+- [x] **Multiple TVs** (phone app): save several TVs and switch between them (tap the TV name at the top, or Settings → Other TVs).
+- [ ] Send the same command to all TVs at once.
 
 ### Remote and apps
 - [ ] **Phone remote**: a mobile layout installable as a home-screen app (PWA), with a PIN or login before the server is opened to the network.

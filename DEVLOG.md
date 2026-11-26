@@ -5,6 +5,37 @@ Planned work lives in [ROADMAP.md](ROADMAP.md); this file records what actually 
 
 ---
 
+## 2026-11-26: Several TVs in the phone app
+
+### Changed
+- Phone app: it can now save several TVs and switch between them. Tap the TV name under the tab title (or Settings → Other TVs) to switch; "Add another TV" runs the setup guide for a new TV, with Cancel to go back. Each TV keeps its own pairing, screensaver settings, album syncs, bedtime and favourites. Forgetting a TV switches to another saved one, or starts the setup when none is left.
+- Saved TVs are stored as a list (`tvs` plus `currentTv`); the single TV saved by older versions moves over by itself.
+- Switching closes the old connections and drops any that finish late, clears the old TV's sleep timer state, and is blocked while an album sync runs. One TV is controlled at a time.
+- The laptop web app already kept several saved TVs, so it is unchanged.
+
+### Tested
+- New `multi_tv_test.dart` (moving the old saved TV over, add/cancel, second TV, reload, forget). `dart analyze`, all tests, release APK; installed on the Android phone.
+
+### Open issues
+- Not yet tried with a second real TV.
+
+---
+
+## 2026-11-26: Sleep timer fix
+
+### Changed
+- Phone app: the sleep timer didn't turn the TV off. Likely cause: the Developer-mode link had dropped, so the timer ran inside the phone app, and the phone pauses apps in the background, so it never fired. Now, before setting a timer, the app reconnects Developer mode if it worked before (no new Allow prompt), and if the link turns out to be stale it reconnects once and retries, so the timer runs on the TV. When it still has to run on the phone, the Timers page shows a clear warning.
+
+### Tested
+- On the TV (harmless test job, no key press): a `nohup` background job started over ADB keeps running after the shell closes and fires on time, so the on-TV timer method itself works.
+- On the TV (with the owner's OK): the same 1-minute timer command the app uses switched the TV off on time (power state Asleep, display off).
+- `dart analyze`, `flutter test`, release APK build; installed on the Android phone.
+
+### Open issues
+- Setting the timer from the phone app itself (with the reconnect step) still to be tried by the owner.
+
+---
+
 ## 2026-11-22: Mirror this phone
 
 ### Changed

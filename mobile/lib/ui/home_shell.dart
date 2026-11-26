@@ -54,10 +54,20 @@ class _HomeShellState extends State<HomeShell> {
     final needsTv = _tab != 3;
     return Scaffold(
       appBar: AppBar(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(titles[_tab]),
-          Text(app.tv?.displayName ?? '', style: Theme.of(context).textTheme.bodySmall),
-        ]),
+        title: InkWell(
+          onTap: () => showTvPicker(context),
+          borderRadius: BorderRadius.circular(8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titles[_tab]),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(
+                child: Text(app.tv?.displayName ?? '',
+                    overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+              ),
+              const Icon(Icons.arrow_drop_down, size: 18),
+            ]),
+          ]),
+        ),
         actions: const [StatusChip(), SizedBox(width: 12)],
       ),
       body: needsTv && !app.connected

@@ -341,3 +341,39 @@ Future<void> openLinkDialog(BuildContext context, {String? initial}) async {
   if (url == null || url.isEmpty || !context.mounted) return;
   await runTv(context, () => app.openUrl(url), success: 'Opening on the TV…');
 }
+
+/// Switch to another saved TV and connect to it.
+Future<void> switchTvTo(BuildContext context, SavedTv t) =>
+    runTv(context, () => AppScope.read(context).switchTv(t), success: 'Connected to ${t.displayName}');
+
+/// Pick which saved TV to control (or add another).
+Future<void> showTvPicker(BuildContext context) async {
+  final app = AppScope.read(context);
+  final choice = await showModalBottomSheet<Object>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        for (final t in app.tvs)
+          ListTile(
+            leading: Icon(identical(t, app.tv) ? Icons.tv : Icons.tv_outlined),
+            title: Text(t.displayName),
+            subtitle: Text(t.address),
+            trailing: identical(t, app.tv) ? const Icon(Icons.check) : null,
+            onTap: () => Navigator.pop(ctx, t),
+          ),
+        ListTile(
+          leading: const Icon(Icons.add),
+          title: const Text('Add another TV'),
+          onTap: () => Navigator.pop(ctx, 'add'),
+        ),
+      ]),
+    ),
+  );
+  if (!context.mounted) return;
+  if (choice == 'add') {
+    await runTv(context, () async => app.addTv());
+  } else if (choice is SavedTv && !identical(choice, app.tv)) {
+    await switchTvTo(context, choice);
+  }
+}

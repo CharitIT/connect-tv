@@ -95,16 +95,32 @@ class AppState extends ChangeNotifier {
     final docs = docsDir ?? await getApplicationDocumentsDirectory();
     final media = Directory('${docs.path}/media')..createSync(recursive: true);
     final s = AppState._(prefs, catalog, media);
-    final raw = prefs.getString('tv');
-    if (raw != null) s.tv = SavedTv.fromJson(jsonDecode(raw));
+    final list = prefs.getString('tvs');
+    if (list != null) {
+      s.tvs.addAll((jsonDecode(list) as List).map((j) => SavedTv.fromJson(j as Map<String, dynamic>)));
+    } else {
+      final raw = prefs.getString('tv'); // before several TVs could be saved
+      if (raw != null) s.tvs.add(SavedTv.fromJson(jsonDecode(raw)));
+    }
+    final current = prefs.getString('currentTv');
+    s.tv = s.tvs.where((t) => t.address == current).firstOrNull ?? s.tvs.firstOrNull;
     s.selectedProfileId = prefs.getString('profile') ?? s.tv?.profileId;
     return s;
   }
 
   // ---------- persisted ----------
 
+  /// All saved TVs. [tv] is the one being controlled (one of these, or null while adding a TV).
+  final List<SavedTv> tvs = [];
   SavedTv? tv;
   String? selectedProfileId;
+
+  /// While adding another TV: the TV to go back to if the user cancels.
+  SavedTv? _addingFrom;
+  bool get addingTv => _addingFrom != null;
+
+  /// Bumped whenever the app switches TV, so a connection to the old TV finishing late is dropped.
+  int _gen = 0;
 
   bool get onboarded => _prefs.getBool('onboarded') ?? false;
   set onboarded(bool v) {
@@ -113,11 +129,11 @@ class AppState extends ChangeNotifier {
   }
 
   void saveTv() {
-    if (tv == null) {
-      _prefs.remove('tv');
-    } else {
-      _prefs.setString('tv', jsonEncode(tv!.toJson()));
-    }
+    final t = tv;
+    if (t != null && !tvs.contains(t)) tvs.add(t);
+    _prefs.setString('tvs', jsonEncode([for (final x in tvs) x.toJson()]));
+    _prefs.remove('tv');
+    if (t != null) _prefs.setString('currentTv', t.address);
     notifyListeners();
   }
 
@@ -189,7 +205,7 @@ class AppState extends ChangeNotifier {
 
   void _rememberHost(String host) {
     if (tv == null || tv!.address != host) {
-      tv = SavedTv(host, profileId: selectedProfileId, config: tv?.config);
+      tv = tvs.where((t) => t.address == host).firstOrNull ?? SavedTv(host, profileId: selectedProfileId);
     }
     tv!.profileId ??= selectedProfileId;
   }
@@ -266,6 +282,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _connectAdb(String host, AdbKey key, bool enabled) async {
     if (!enabled) throw AdbException('Developer mode isn\'t set up yet.');
+    final gen = _gen;
     final AdbClient client;
     try {
       client = await AdbClient.connect(host, key, keyName: _keyName, onAuthPrompt: () {
@@ -275,6 +292,10 @@ class AppState extends ChangeNotifier {
       });
     } finally {
       adbWaitingForAllow = false;
+    }
+    if (gen != _gen) {
+      client.close(); // the user switched to another TV meanwhile
+      return;
     }
     _client = client;
     _service = TvService(client);
@@ -301,7 +322,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _connectRemote(String host) async {
+    final gen = _gen;
     final r = await AtvRemote.connect(host, await _identity());
+    if (gen != _gen) {
+      r.close();
+      return;
+    }
     _remote = r;
     r.onChange = notifyListeners;
     r.done.then((_) {
@@ -470,8 +496,31 @@ class AppState extends ChangeNotifier {
   Future<void> setSleepTimer(int? minutes) async {
     _phoneSleepTimer?.cancel();
     _phoneSleepTimer = null;
+    // A timer on the TV keeps working when the phone locks; one in this app doesn't (the phone pauses
+    // apps in the background). So if Developer mode has dropped, reconnect it first when it worked before.
+    if (!adbConnected && remoteConnected && tv?.info != null && !adbWaitingForAllow) {
+      try {
+        await connectDeveloperMode().timeout(const Duration(seconds: 10));
+      } catch (_) {}
+    }
+    var onTv = false;
     if (adbConnected) {
-      await service.setSleepTimer(minutes);
+      try {
+        await service.setSleepTimer(minutes);
+        onTv = true;
+      } catch (_) {
+        // The link may be stale: reconnect once and try again.
+        _client?.close();
+        try {
+          await connectDeveloperMode().timeout(const Duration(seconds: 10));
+          await service.setSleepTimer(minutes);
+          onTv = true;
+        } catch (_) {
+          if (!remoteConnected) rethrow;
+        }
+      }
+    }
+    if (onTv) {
       sleepTimerOnPhone = false;
     } else if (minutes != null && minutes > 0) {
       if (!remoteConnected) throw AdbException('Not connected to your TV. Tap Reconnect.');
@@ -644,13 +693,74 @@ class AppState extends ChangeNotifier {
     if (notify) notifyListeners();
   }
 
-  /// Forget the TV and start the setup again.
-  void forgetTv() {
+  /// Stop everything that belongs to the current TV before controlling another one.
+  void _leaveTv() {
+    if (_syncing != null) throw AdbException('Wait for the album sync to finish, then try again.');
+    _gen++;
+    _userDisconnected = false;
     cancelPairing();
     disconnect(notify: false);
-    tv = null;
-    _prefs.setBool('onboarded', false);
+    _phoneSleepTimer?.cancel();
+    _phoneSleepTimer = null;
+    sleepAt = null;
+    sleepTimerOnPhone = false;
+    lastError = null;
+    adbError = null;
+    adbWaitingForAllow = false;
+    lastSyncResult = null;
+    lastSyncError = null;
+  }
+
+  /// Control another saved TV.
+  Future<void> switchTv(SavedTv t) async {
+    if (identical(t, tv) && connected) return;
+    _leaveTv();
+    _addingFrom = null;
+    tv = t;
+    if (t.profileId != null) selectedProfileId = t.profileId;
     saveTv();
+    await connect();
+  }
+
+  /// Start the setup guide for another TV, keeping the saved ones.
+  void addTv() {
+    _addingFrom = tv;
+    _leaveTv();
+    tv = null;
+    onboarded = false;
+  }
+
+  /// Leave the setup guide without adding a TV, and go back to the previous one.
+  void cancelAddTv() {
+    final back = _addingFrom;
+    if (back == null) return;
+    _leaveTv();
+    _addingFrom = null;
+    tv = back;
+    saveTv();
+    onboarded = true;
+    unawaited(autoConnect());
+  }
+
+  /// Setup finished: the TV just set up is now saved alongside the others.
+  void finishSetup() {
+    _addingFrom = null;
+    saveTv();
+    onboarded = true;
+  }
+
+  /// Forget the current TV. Switches to another saved TV, or starts the setup when none is left.
+  void forgetTv() {
+    final gone = tv;
+    _leaveTv();
+    tvs.remove(gone);
+    tv = tvs.firstOrNull;
+    if (tv == null) {
+      _prefs.remove('currentTv');
+      _prefs.setBool('onboarded', false);
+    }
+    saveTv();
+    if (tv != null) unawaited(autoConnect());
   }
 
   // ---------- local thumbnails ----------

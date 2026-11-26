@@ -36,6 +36,23 @@ class SettingsTab extends StatelessWidget {
       if (app.connected)
         ListTile(leading: const Icon(Icons.link_off), title: const Text('Disconnect'), onTap: app.userDisconnect),
 
+      _Header(app.tvs.length > 1 ? 'Other TVs' : 'More TVs'),
+      for (final t in app.tvs)
+        if (!identical(t, tv))
+          ListTile(
+            leading: const Icon(Icons.tv_outlined),
+            title: Text(t.displayName),
+            subtitle: Text(t.address),
+            trailing: const Text('Switch'),
+            onTap: () => switchTvTo(context, t),
+          ),
+      ListTile(
+        leading: const Icon(Icons.add),
+        title: const Text('Add another TV'),
+        subtitle: const Text('Save it here and switch between your TVs'),
+        onTap: () => runTv(context, () async => app.addTv()),
+      ),
+
       const _Header('Connections'),
       ListTile(
         leading: Icon(Icons.pin_outlined, color: app.remoteConnected ? Colors.green : null),
@@ -94,7 +111,7 @@ class SettingsTab extends StatelessWidget {
       ListTile(
         leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
         title: const Text('Forget this TV'),
-        subtitle: const Text('Connect a different TV'),
+        subtitle: Text(app.tvs.length > 1 ? 'Remove it from this phone' : 'Connect a different TV'),
         onTap: () => _forget(context, app),
       ),
       const SizedBox(height: 24),
@@ -142,14 +159,14 @@ class SettingsTab extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Forget this TV?'),
-        content: const Text('The screensaver stays on the TV. You can set up the same or another TV again.'),
+        content: const Text('The screensaver stays on the TV. You can add it again later.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Forget')),
         ],
       ),
     );
-    if (ok == true) app.forgetTv();
+    if (ok == true && context.mounted) await runTv(context, () async => app.forgetTv());
   }
 }
 

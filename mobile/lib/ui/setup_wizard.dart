@@ -36,7 +36,10 @@ class _SetupWizardState extends State<SetupWizard> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Set up Connect TV'),
+        title: Text(app.addingTv ? 'Add a TV' : 'Set up Connect TV'),
+        actions: [
+          if (app.addingTv) TextButton(onPressed: app.cancelAddTv, child: const Text('Cancel')),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(4),
           child: LinearProgressIndicator(value: (_page + 1) / _count),
@@ -67,7 +70,7 @@ class _SetupWizardState extends State<SetupWizard> {
                 onPressed: !canNext
                     ? null
                     : last
-                        ? () => app.onboarded = true
+                        ? app.finishSetup
                         : () => _go(_page + 1),
                 child: Text(switch (_page) {
                   0 => 'Get started',

@@ -104,7 +104,11 @@ class _TimersPageState extends State<TimersPage> {
           const Text('Without Developer mode the timer runs in this app, so keep Connect TV open '
               '(the phone may stop it in the background). With Developer mode it runs on the TV itself.')
         else if (app.sleepTimerOnPhone)
-          const Text('This timer runs in this app. Keep Connect TV open.'),
+          Text(
+            'Developer mode isn\'t connected, so this timer runs in this app and may not fire once the phone '
+            'locks. Keep Connect TV open on screen, or reconnect Developer mode in Settings and set the timer again.',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         const Divider(height: 40),
 
         Text('App bedtime', style: t.titleLarge),
