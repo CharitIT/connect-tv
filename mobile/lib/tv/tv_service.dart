@@ -317,6 +317,15 @@ class TvService {
     }
   }
 
+  /// Show an app's page in the TV's Play Store (to install it).
+  Future<void> openStorePage(String pkg) async {
+    if (!RegExp(r'^[A-Za-z0-9_.]+$').hasMatch(pkg)) throw AdbException('Bad app name');
+    final out = await sh('am start -a android.intent.action.VIEW -d ${q('market://details?id=$pkg')}');
+    if (RegExp(r'Error|unable to resolve', caseSensitive: false).hasMatch(out)) {
+      throw AdbException('The TV has no Play Store. Install the app from the TV\'s app store instead.');
+    }
+  }
+
   /// A PNG picture of what's on the TV screen.
   Future<Uint8List> screenshot() async {
     final png = await adb.execBytes('screencap -p');

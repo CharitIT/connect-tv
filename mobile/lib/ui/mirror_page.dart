@@ -9,6 +9,9 @@ import 'package:flutter/services.dart';
 
 import 'common.dart';
 
+/// AirScreen, a free AirPlay receiver for Android TV (by another company), so iPhones can mirror.
+const airScreenPackage = 'com.ionitech.airscreen';
+
 class MirrorPage extends StatelessWidget {
   const MirrorPage({super.key});
 
@@ -67,29 +70,92 @@ class MirrorPage extends StatelessWidget {
                 'To stop: tap the Cast notification on the phone and choose Disconnect.',
               ],
             ),
-          ] else ...[
-            const Card(
-              child: ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('iPhone can\'t mirror to this TV'),
-                subtitle: Text(
-                  'Google TVs don\'t support AirPlay, and Apple doesn\'t let iPhones cast their whole '
-                  'screen with Chromecast.',
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const _Steps(
-              title: 'What works instead',
-              steps: [
-                'Videos: tap the Cast button in YouTube, Netflix, Prime Video and other apps.',
-                'Links: share a link to the TV with "Open a link on the TV".',
-                'Photos: add them to the screensaver from the Screensaver tab.',
-              ],
-            ),
-          ],
+          ] else
+            const IphoneMirrorSetup(),
         ],
       ),
+    );
+  }
+}
+
+/// iPhone: how to mirror to a Google TV (an AirPlay receiver app on the TV, then the iPhone's own
+/// Screen Mirroring). Used on the Mirror page and as a step in the setup guide.
+class IphoneMirrorSetup extends StatefulWidget {
+  const IphoneMirrorSetup({super.key});
+
+  @override
+  State<IphoneMirrorSetup> createState() => _IphoneMirrorSetupState();
+}
+
+class _IphoneMirrorSetupState extends State<IphoneMirrorSetup> {
+  bool? _installed; // known only with Developer mode
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final app = AppScope.read(context);
+    if (!app.adbConnected) return;
+    try {
+      final yes = await app.service.isInstalled(airScreenPackage);
+      if (mounted) setState(() => _installed = yes);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Google TVs don\'t understand AirPlay, the iPhone\'s screen mirroring. A free AirPlay app on the TV '
+          'fixes that: afterwards the iPhone\'s own Screen Mirroring shows the TV, with sound.',
+        ),
+        const SizedBox(height: 16),
+        const _Steps(
+          title: 'Once: put AirPlay on the TV',
+          steps: [
+            'Tap the button below. The TV opens AirScreen in its Play Store.',
+            'On the TV, choose Install, then open AirScreen once and leave its settings as they are.',
+          ],
+        ),
+        if (_installed == true)
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.check_circle, color: Colors.green),
+            title: Text('AirScreen is on the TV'),
+          )
+        else
+          FilledButton.icon(
+            icon: const Icon(Icons.download),
+            label: const Text('Open AirScreen on the TV'),
+            onPressed: () async {
+              await runTv(
+                context,
+                () => AppScope.read(context).openStorePage(airScreenPackage),
+                success: 'Look at your TV',
+              );
+            },
+          ),
+        const SizedBox(height: 20),
+        const _Steps(
+          title: 'Each time: mirror the iPhone',
+          steps: [
+            'Swipe down from the top-right corner of the iPhone to open Control Center.',
+            'Tap Screen Mirroring (two overlapping rectangles) and choose your TV.',
+            'To stop: open Control Center, tap Screen Mirroring, then Stop Mirroring.',
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'AirScreen is made by another company and is free with an optional paid version. '
+          'Other AirPlay receiver apps in the TV\'s Play Store work the same way.',
+          style: TextStyle(fontSize: 12),
+        ),
+      ],
     );
   }
 }

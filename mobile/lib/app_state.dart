@@ -473,6 +473,14 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Show an app's page in the TV's Play Store, so it can be installed with the TV remote.
+  Future<void> openStorePage(String pkg) async {
+    if (!RegExp(r'^[A-Za-z0-9_.]+$').hasMatch(pkg)) throw AdbException('Bad app name');
+    final r = _remote;
+    if (r != null && r.isOpen) return r.openLink('market://details?id=$pkg');
+    return service.openStorePage(pkg);
+  }
+
   /// Open a web link on the TV (YouTube, Netflix… links open in their apps).
   Future<void> openUrl(String url) async {
     url = url.trim();

@@ -5,6 +5,23 @@ Planned work lives in [ROADMAP.md](ROADMAP.md); this file records what actually 
 
 ---
 
+## 2026-11-26: iPhone mirroring via an AirPlay receiver
+
+### Changed
+- Phone app (iPhone): Mirror this phone now offers a working route. Google TVs have no AirPlay, so the page has a button that opens AirScreen (`com.ionitech.airscreen`, a free AirPlay receiver by another company) in the TV's Play Store. After it's installed, the iPhone's own Control Center → Screen Mirroring lists the TV. The page has step-by-step instructions.
+- The iPhone setup guide has a new optional step, "Mirror your iPhone", between the screensaver and the end, with the same AirScreen button and steps as the Mirror page (shared `IphoneMirrorSetup` widget). With Developer mode connected it shows a tick when AirScreen is already on the TV. Android phones don't get this step (they use Chromecast).
+- Fixed a crash risk in the setup guide: the screensaver step could read its context after it had closed.
+- New `openStorePage(pkg)` in `AppState` (remote link: `market://details?id=` app link; Developer mode: `am start`) and `TvService`.
+
+### Tested
+- `dart analyze`, all 16 tests (new: the iPhone guide has the mirroring step, Android's doesn't); installed on the iPhone (data kept) and the Android phone. Checked the TV (read-only): it has the Play Store and no AirPlay receiver yet.
+
+### Open issues
+- Not yet tried: installing AirScreen on the TV and mirroring the iPhone.
+- The iPhone's free signing still expires on 2026-11-28; rebuild and reinstall after that.
+
+---
+
 ## 2026-11-26: Several TVs in the phone app
 
 ### Changed

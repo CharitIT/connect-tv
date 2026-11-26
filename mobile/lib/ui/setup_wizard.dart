@@ -1,14 +1,20 @@
 // First-run guide: welcome → choose TV brand → find the TV & pair with a code →
-// Developer mode (optional, for the screensaver) → set up the screensaver → feature tour.
+// Developer mode (optional, for the screensaver) → set up the screensaver →
+// (iPhone) screen mirroring → feature tour.
+
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../tv/tv_service.dart';
 import 'common.dart';
+import 'mirror_page.dart';
 
 class SetupWizard extends StatefulWidget {
-  const SetupWizard({super.key});
+  /// Show the screen-mirroring step (iPhones need an AirPlay app on the TV). Defaults to iPhone only.
+  final bool? mirrorStep;
+  const SetupWizard({super.key, this.mirrorStep});
 
   @override
   State<SetupWizard> createState() => _SetupWizardState();
@@ -17,7 +23,11 @@ class SetupWizard extends StatefulWidget {
 class _SetupWizardState extends State<SetupWizard> {
   final _pages = PageController();
   int _page = 0;
-  static const _count = 6;
+  bool get _mirror => widget.mirrorStep ?? Platform.isIOS;
+  int get _count => _mirror ? 7 : 6;
+
+  // Optional steps: "Skip for now" and "Next" both just move on.
+  bool get _optional => _page == 4 || (_mirror && _page == 5);
 
   void _go(int p) {
     setState(() => _page = p);
@@ -37,9 +47,7 @@ class _SetupWizardState extends State<SetupWizard> {
     return Scaffold(
       appBar: AppBar(
         title: Text(app.addingTv ? 'Add a TV' : 'Set up Connect TV'),
-        actions: [
-          if (app.addingTv) TextButton(onPressed: app.cancelAddTv, child: const Text('Cancel')),
-        ],
+        actions: [if (app.addingTv) TextButton(onPressed: app.cancelAddTv, child: const Text('Cancel'))],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(4),
           child: LinearProgressIndicator(value: (_page + 1) / _count),
@@ -54,36 +62,39 @@ class _SetupWizardState extends State<SetupWizard> {
           _Connect(onConnected: () => _go(3), onUseDevMode: () => _go(3)),
           const _DeveloperMode(),
           _ScreensaverSetup(key: ValueKey(app.adbConnected)),
+          if (_mirror) _MirrorSetup(key: ValueKey(app.adbConnected)),
           const _Done(),
         ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Row(children: [
-            if (_page > 0) TextButton(onPressed: () => _go(_page - 1), child: const Text('Back')),
-            const Spacer(),
-            if (_page == 4)
-              TextButton(onPressed: () => _go(5), child: const Text('Skip for now'))
-            else
-              FilledButton(
-                onPressed: !canNext
-                    ? null
-                    : last
-                        ? app.finishSetup
-                        : () => _go(_page + 1),
-                child: Text(switch (_page) {
-                  0 => 'Get started',
-                  3 when !app.adbConnected => 'Skip for now',
-                  _ when last => 'Start using Connect TV',
-                  _ => 'Next',
-                }),
-              ),
-            if (_page == 4) ...[
-              const SizedBox(width: 8),
-              FilledButton(onPressed: () => _go(5), child: const Text('Next')),
+          child: Row(
+            children: [
+              if (_page > 0) TextButton(onPressed: () => _go(_page - 1), child: const Text('Back')),
+              const Spacer(),
+              if (_optional)
+                TextButton(onPressed: () => _go(_page + 1), child: const Text('Skip for now'))
+              else
+                FilledButton(
+                  onPressed: !canNext
+                      ? null
+                      : last
+                      ? app.finishSetup
+                      : () => _go(_page + 1),
+                  child: Text(switch (_page) {
+                    0 => 'Get started',
+                    3 when !app.adbConnected => 'Skip for now',
+                    _ when last => 'Start using Connect TV',
+                    _ => 'Next',
+                  }),
+                ),
+              if (_optional) ...[
+                const SizedBox(width: 8),
+                FilledButton(onPressed: () => _go(_page + 1), child: const Text('Next')),
+              ],
             ],
-          ]),
+          ),
         ),
       ),
     );
@@ -100,14 +111,17 @@ class _Step extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    return ListView(padding: const EdgeInsets.fromLTRB(20, 24, 20, 24), children: [
-      Icon(icon, size: 48, color: Theme.of(context).colorScheme.primary),
-      const SizedBox(height: 12),
-      Text(title, style: t.headlineSmall),
-      if (subtitle != null) ...[const SizedBox(height: 8), Text(subtitle!, style: t.bodyLarge)],
-      const SizedBox(height: 20),
-      ...children,
-    ]);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      children: [
+        Icon(icon, size: 48, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 12),
+        Text(title, style: t.headlineSmall),
+        if (subtitle != null) ...[const SizedBox(height: 8), Text(subtitle!, style: t.bodyLarge)],
+        const SizedBox(height: 20),
+        ...children,
+      ],
+    );
   }
 }
 
@@ -140,11 +154,11 @@ class _Feature extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: CircleAvatar(child: Icon(icon)),
-        title: Text(title),
-        subtitle: Text(text),
-      );
+    contentPadding: EdgeInsets.zero,
+    leading: CircleAvatar(child: Icon(icon)),
+    title: Text(title),
+    subtitle: Text(text),
+  );
 }
 
 // ---------- 1. Choose brand ----------
@@ -163,10 +177,17 @@ class _ChooseBrand extends StatelessWidget {
         RadioGroup<String>(
           groupValue: app.selectedProfileId,
           onChanged: (v) => app.selectProfile(v!),
-          child: Column(children: [
-            for (final p in app.catalog.profiles)
-              RadioListTile<String>(value: p.id, title: Text(p.label), subtitle: Text(p.os), contentPadding: EdgeInsets.zero),
-          ]),
+          child: Column(
+            children: [
+              for (final p in app.catalog.profiles)
+                RadioListTile<String>(
+                  value: p.id,
+                  title: Text(p.label),
+                  subtitle: Text(p.os),
+                  contentPadding: EdgeInsets.zero,
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -264,8 +285,10 @@ class _ConnectState extends State<_Connect> {
             ),
           )
         else ...[
-          const Text('Pair this phone with the TV. The TV shows a code, and you type it here. '
-              'No special TV settings are needed.'),
+          const Text(
+            'Pair this phone with the TV. The TV shows a code, and you type it here. '
+            'No special TV settings are needed.',
+          ),
           const SizedBox(height: 12),
           PairPanel(address: () => _ip.text, onPaired: widget.onConnected),
           if (app.status == ConnStatus.preparingKey) ...[
@@ -313,7 +336,7 @@ class _DeveloperModeState extends State<_DeveloperMode> {
       title: 'Developer mode (for the screensaver)',
       subtitle: app.connected
           ? 'Optional. The remote already works. Developer mode adds your photo screensaver, typing, and the full app list. '
-              'You can skip this and do it later.'
+                'You can skip this and do it later.'
           : 'Turn on Developer mode with your TV remote, then connect.',
       children: [
         if (app.adbConnected)
@@ -335,7 +358,13 @@ class _DeveloperModeState extends State<_DeveloperMode> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Row(children: [const Icon(Icons.info_outline), const SizedBox(width: 12), Expanded(child: Text(p.notes!))]),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(p.notes!)),
+                  ],
+                ),
               ),
             ),
           const SizedBox(height: 12),
@@ -357,11 +386,22 @@ class _DeveloperModeState extends State<_DeveloperMode> {
               color: Theme.of(context).colorScheme.tertiaryContainer,
               child: const Padding(
                 padding: EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [Icon(Icons.touch_app), SizedBox(width: 8), Text('Look at your TV now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))]),
-                  SizedBox(height: 8),
-                  Text('It shows "Allow USB debugging?".\n1. Tick "Always allow from this computer".\n2. Choose Allow.'),
-                ]),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.touch_app),
+                        SizedBox(width: 8),
+                        Text('Look at your TV now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'It shows "Allow USB debugging?".\n1. Tick "Always allow from this computer".\n2. Choose Allow.',
+                    ),
+                  ],
+                ),
               ),
             )
           else if (connecting)
@@ -391,11 +431,13 @@ class _Progress extends StatelessWidget {
   const _Progress(this.text);
 
   @override
-  Widget build(BuildContext context) => Row(children: [
-        const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-        const SizedBox(width: 12),
-        Expanded(child: Text(text)),
-      ]);
+  Widget build(BuildContext context) => Row(
+    children: [
+      const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+      const SizedBox(width: 12),
+      Expanded(child: Text(text)),
+    ],
+  );
 }
 
 // ---------- 4. Screensaver ----------
@@ -422,6 +464,7 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
   }
 
   Future<void> _refresh() async {
+    if (!mounted) return; // the step can close before its first frame callback runs
     final app = AppScope.read(context);
     if (!app.adbConnected) return;
     try {
@@ -450,7 +493,8 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
       return const _Step(
         icon: Icons.photo_library_outlined,
         title: 'Your photo screensaver',
-        subtitle: 'The screensaver needs Developer mode (the previous step). '
+        subtitle:
+            'The screensaver needs Developer mode (the previous step). '
             'You can set it up any time later from the Screensaver tab.',
       );
     }
@@ -465,7 +509,12 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
           title: 'Install the screensaver on the TV',
           subtitle: _installed == true ? 'Installed' : 'A small app that plays your photos. Takes about a minute.',
           action: FilledButton(
-            onPressed: busy ? null : () => _do('Installing…', () => ScreensaverActions.install(context, onStep: (s) => setState(() => _busy = s))),
+            onPressed: busy
+                ? null
+                : () => _do(
+                    'Installing…',
+                    () => ScreensaverActions.install(context, onStep: (s) => setState(() => _busy = s)),
+                  ),
             child: Text(_installed == true ? 'Reinstall' : 'Install'),
           ),
         ),
@@ -477,9 +526,20 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
           action: FilledButton(
             onPressed: busy || _installed != true
                 ? null
-                : () => _do('Sending…', () => ScreensaverActions.addMedia(context, onProgress: (s, p) {
-                      if (mounted) setState(() { _busy = s; _progress = p; });
-                    })),
+                : () => _do(
+                    'Sending…',
+                    () => ScreensaverActions.addMedia(
+                      context,
+                      onProgress: (s, p) {
+                        if (mounted) {
+                          setState(() {
+                            _busy = s;
+                            _progress = p;
+                          });
+                        }
+                      },
+                    ),
+                  ),
             child: const Text('Add'),
           ),
         ),
@@ -490,11 +550,15 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
           subtitle: 'Starts after the TV is idle for:',
           extra: DropdownButton<int>(
             value: _minutes,
-            items: [for (final m in [1, 2, 3, 5, 10, 15, 30, 60]) DropdownMenuItem(value: m, child: Text('$m min'))],
+            items: [
+              for (final m in [1, 2, 3, 5, 10, 15, 30, 60]) DropdownMenuItem(value: m, child: Text('$m min')),
+            ],
             onChanged: busy ? null : (v) => setState(() => _minutes = v!),
           ),
           action: FilledButton(
-            onPressed: busy || _installed != true ? null : () => _do('Saving…', () => ScreensaverActions.activate(context, _minutes)),
+            onPressed: busy || _installed != true
+                ? null
+                : () => _do('Saving…', () => ScreensaverActions.activate(context, _minutes)),
             child: Text(_active ? 'Update' : 'Turn on'),
           ),
         ),
@@ -502,7 +566,13 @@ class _ScreensaverSetupState extends State<_ScreensaverSetup> {
           OutlinedButton.icon(
             icon: const Icon(Icons.play_arrow),
             label: const Text('Preview on TV'),
-            onPressed: busy ? null : () => runTv(context, () => AppScope.read(context).service.preview(), success: 'Playing on the TV. Press Back on the TV remote to stop.'),
+            onPressed: busy
+                ? null
+                : () => runTv(
+                    context,
+                    () => AppScope.read(context).service.preview(),
+                    success: 'Playing on the TV. Press Back on the TV remote to stop.',
+                  ),
           ),
         if (busy) ...[
           const SizedBox(height: 16),
@@ -521,33 +591,61 @@ class _TaskTile extends StatelessWidget {
   final String title, subtitle;
   final Widget action;
   final Widget? extra;
-  const _TaskTile({required this.n, required this.done, required this.title, required this.subtitle, required this.action, this.extra});
+  const _TaskTile({
+    required this.n,
+    required this.done,
+    required this.title,
+    required this.subtitle,
+    required this.action,
+    this.extra,
+  });
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(children: [
-            CircleAvatar(
-              backgroundColor: done ? Colors.green : null,
-              child: done ? const Icon(Icons.check, color: Colors.white) : Text('$n'),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: done ? Colors.green : null,
+            child: done ? const Icon(Icons.check, color: Colors.white) : Text('$n'),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text(subtitle),
                 ?extra,
-              ]),
+              ],
             ),
-            const SizedBox(width: 8),
-            action,
-          ]),
-        ),
-      );
+          ),
+          const SizedBox(width: 8),
+          action,
+        ],
+      ),
+    ),
+  );
 }
 
-// ---------- 5. Done ----------
+// ---------- 5. Screen mirroring (iPhone) ----------
+
+class _MirrorSetup extends StatelessWidget {
+  const _MirrorSetup({super.key});
+
+  @override
+  Widget build(BuildContext context) => const _Step(
+    icon: Icons.screen_share_outlined,
+    title: 'Mirror your iPhone',
+    subtitle:
+        'Optional: show your iPhone\'s screen on the TV. You can also do this later from '
+        'Remote → Mirror this phone.',
+    children: [IphoneMirrorSetup()],
+  );
+}
+
+// ---------- last: Done ----------
 
 class _Done extends StatelessWidget {
   const _Done();
@@ -559,10 +657,22 @@ class _Done extends StatelessWidget {
       title: 'You\'re all set!',
       subtitle: 'Here\'s what you can do:',
       children: [
-        _Feature(Icons.gamepad_outlined, 'Remote', 'Use the arrows, OK, Back and Home. Volume and play/pause are there too, and you can type into search boxes.'),
+        _Feature(
+          Icons.gamepad_outlined,
+          'Remote',
+          'Use the arrows, OK, Back and Home. Volume and play/pause are there too, and you can type into search boxes.',
+        ),
         _Feature(Icons.apps, 'Apps', 'Tap Netflix, Prime Video, YouTube or any app on the TV to open it.'),
-        _Feature(Icons.photo_library_outlined, 'Screensaver', 'Add or remove photos, change the timing and clock, preview, or go back to the TV\'s own screensaver.'),
-        _Feature(Icons.settings_outlined, 'Settings', 'Reconnect, see the setup steps again, or connect a different TV.'),
+        _Feature(
+          Icons.photo_library_outlined,
+          'Screensaver',
+          'Add or remove photos, change the timing and clock, preview, or go back to the TV\'s own screensaver.',
+        ),
+        _Feature(
+          Icons.settings_outlined,
+          'Settings',
+          'Reconnect, see the setup steps again, or connect a different TV.',
+        ),
         SizedBox(height: 12),
         Text('Tip: if the app says "Reconnect", switch the TV on first. Most TVs turn their Wi-Fi off in standby.'),
       ],
